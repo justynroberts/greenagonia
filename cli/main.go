@@ -1614,7 +1614,7 @@ func resolveScenariosCmd(args []string) {
 		resolved, failed := 0, 0
 		for i, st := range sc.steps {
 			dk := dedupKey(state.Env, sc.name, st.service, i)
-			if err := sendResolve(state.regionOf(), state.RoutingKey, dk); err != nil {
+			if err := sendResolve(state.regionOf(), state.RoutingKey, dk, st.service); err != nil {
 				failed++
 				continue
 			}
@@ -1958,14 +1958,24 @@ func sendAlert(region string, ev pdEvent) error {
 	return postJSON(alertsURLFor(region), body)
 }
 
-// sendResolve closes an incident by sending an event_action=resolve with the
-// same dedup_key the original trigger used. Payload isn't required by the
-// Events API for resolves, so we send a minimal envelope.
-func sendResolve(region, routingKey, dk string) error {
-	body, err := json.Marshal(map[string]string{
+// sendResolve closes an alert by sending event_action=resolve with the same
+// dedup_key the original trigger used. The service name must be included in
+// custom_details so the event orchestration router can match it to the right
+// service — without it the resolve falls through to the catch-all and the
+// incident stays open.
+func sendResolve(region, routingKey, dk, service string) error {
+	body, err := json.Marshal(map[string]any{
 		"routing_key":  routingKey,
 		"event_action": "resolve",
 		"dedup_key":    dk,
+		"payload": map[string]any{
+			"summary":  "resolved",
+			"source":   "greenagonia-cli",
+			"severity": "info",
+			"custom_details": map[string]string{
+				"service": service,
+			},
+		},
 	})
 	if err != nil {
 		return err
@@ -2304,7 +2314,7 @@ func streamScenarioResolve(w http.ResponseWriter, r *http.Request, sc scenario, 
 		default:
 		}
 		dk := dedupKey(state.Env, sc.name, st.service, i)
-		if err := sendResolve(state.regionOf(), state.RoutingKey, dk); err != nil {
+		if err := sendResolve(state.regionOf(), state.RoutingKey, dk, st.service); err != nil {
 			failed++
 			send("err", map[string]any{"message": fmt.Sprintf("%s/%d: %v", st.service, i, err)})
 			continue
