@@ -1,0 +1,236 @@
+# Greenagonia
+
+Greenagonia is PagerDuty's fictional demo company. This repo gives you a
+one-command way to stand up a complete Greenagonia environment in a real
+PagerDuty account and then drive realistic incidents through it.
+
+## Quick start (macOS)
+
+```bash
+git clone https://github.com/justynroberts/greenagonia.git && cd greenagonia && ./quickstart.sh
+```
+
+That checks/installs the prerequisites (Terraform + Go via Homebrew), builds
+the CLI, and prints the two commands you need next. Fully unattended variant —
+export your credentials first and it deploys too:
+
+```bash
+export PAGERDUTY_TOKEN=<admin-api-key> GREENAGONIA_EMAIL=you@example.com
+git clone https://github.com/justynroberts/greenagonia.git && cd greenagonia && ./quickstart.sh
+```
+
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| macOS (Apple Silicon or Intel) | Linux works too if Homebrew is installed |
+| [Homebrew](https://brew.sh) | the only thing `quickstart.sh` won't install for you |
+| Terraform ≥ 1.5 | auto-installed by `quickstart.sh` via brew if missing |
+| Go ≥ 1.22 | auto-installed by `quickstart.sh` via brew if missing (build only) |
+| PagerDuty account | admin/global access; Free plan works for the core demo |
+| PagerDuty REST API key | **Read/Write**; create at *Integrations → API Access Keys* |
+| A fresh on-call email | must **not** already exist as a user in the PD account; two extra users are derived from it via plus-addressing (`you+oncall2@`, `you+oncall3@`) |
+| (EU accounts) `--region eu` | if your subdomain is `*.eu.pagerduty.com`; wrong region = 401 |
+| (optional) AIOps add-on | for the intelligent alert-grouping the services are configured with |
+| (optional) Business/Digital Ops plan | only needed for `--with-workflows` (Incident Workflows) |
+
+What gets created:
+
+- **1 user / 1 team / 1 escalation policy** — the primary on-call email you supply
+- **8 technical services** — `payment-gateway`, `checkout-api`, `user-auth`,
+  `product-catalog`, `recommendation-engine`, `search-service`, `order-service`,
+  `notification-service`
+- **2 business services** — `customer-checkout` and `product-discovery`, each
+  wired up via service-dependency edges to the technical services that support
+  it
+- **1 event orchestration** — single inbound routing key; routes events to a
+  service based on `payload.custom_details.service` (see below)
+- **1 Events API v2 integration per technical service** — doubles as the
+  change-event endpoint each service receives GitHub deploys on
+- **3 automation actions** — `run-diagnostics`, `rollback-deployment`,
+  `clear-down-settings`, attached to every technical service
+- **3 incident workflows** — SEV-1 response, auto-rollback, clear-down — manual
+  triggers, available on every incident. **Opt-in via `--with-workflows`**:
+  Incident Workflows are a paid PagerDuty feature (Business / Digital
+  Operations plans). On accounts without the entitlement the API returns
+  404. Default off; the automation actions above still show up on every
+  incident's Actions menu when workflows are disabled.
+
+Everything is namespaced with an `environment` slug (e.g. `demo`, `qa`,
+`alex`) so several environments can coexist in the same PagerDuty account.
+
+---
+
+## Layout
+
+```
+greenagonia/
+├── README.md
+├── quickstart.sh                # one-shot: prereqs + build (+ deploy)
+├── Makefile
+├── terraform/
+│   ├── main.tf                  # provider, locals (the service catalogue)
+│   ├── users.tf                 # user, team, escalation policy
+│   ├── services.tf              # tech + business services, deps, change-event integrations
+│   ├── orchestration.tf         # event orchestration + dynamic router
+│   ├── automation.tf            # Diagnostics / Rollback / Clear-down
+│   ├── workflows.tf             # 3 incident workflows + manual triggers
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── terraform.tfvars.example
+└── cli/
+    ├── go.mod
+    └── main.go                  # deploy / undeploy / scenarios
+```
+
+---
+
+## Build (manual — quickstart.sh does this for you)
+
+```bash
+make build           # native binary → ./bin/greenagonia
+make build-all       # cross-compile for macOS / Linux / Windows
+```
+
+## Deploy
+
+```bash
+export PAGERDUTY_TOKEN=...
+./bin/greenagonia deploy --env demo --email me@example.com
+```
+
+For EU PagerDuty accounts (subdomain at `*.eu.pagerduty.com`):
+
+```bash
+./bin/greenagonia deploy --env demo --region eu --email me@example.com
+```
+
+The region is recorded in `~/.greenagonia/<env>.json` so subsequent
+`scenarios run` and `web` commands automatically use the right Events API
+host (`events.eu.pagerduty.com` vs `events.pagerduty.com`).
+
+This will:
+
+1. `terraform init` (idempotent)
+2. select / create the Terraform workspace `demo`
+3. `terraform apply` with your inputs
+4. write the routing key AND every per-service change-event integration key
+   to `~/.greenagonia/demo.json` (mode `0600`)
+5. print the routing key
+
+## Run a scenario
+
+`scenarios run` reads `~/.greenagonia/<env>.json`, so no key flags needed:
+
+```bash
+./bin/greenagonia scenarios list
+./bin/greenagonia scenarios run --env demo --scenario bad-payment-deploy
+```
+
+Add `--repeat N` to fire a scenario several times back-to-back; add
+`--no-delay` to skip the realistic inter-step pauses. `--routing-key`
+still works as an override for ad-hoc testing — change events are skipped
+in that mode because they need per-service integration keys.
+
+## Undeploy
+
+```bash
+./bin/greenagonia undeploy --env demo
+```
+
+Removes the PagerDuty resources AND the local state file at
+`~/.greenagonia/demo.json`.
+
+---
+
+## How dynamic routing works
+
+There's **one** inbound integration key (the orchestration's routing key)
+and **eight** technical services behind it. The CLI puts the target service
+name in every event:
+
+```json
+{
+  "routing_key": "R0H...",
+  "event_action": "trigger",
+  "payload": {
+    "summary": "[payment-gateway] Auth failure rate 4% → 89% ...",
+    "severity": "critical",
+    "source": "payment-gw-prod-3",
+    "custom_details": {
+      "service": "payment-gateway",   ← the contract
+      "scenario": "bad-payment-deploy",
+      "release": "v2.4.1"
+    }
+  }
+}
+```
+
+The orchestration router (`terraform/main.tf` § 4) generates one rule per
+technical service from the same name list, all matching on
+`event.custom_details.service`. Add a new technical service to
+`locals.technical_services` and (a) a PagerDuty service gets created and
+(b) a router rule is generated for it — no other edits needed. Anything
+that doesn't match falls through to the `*-unrouted-events` catch-all.
+
+---
+
+## Scenarios
+
+Each scenario tells a story about a bad deploy that takes services down in
+sequence. Each one opens with a **simulated GitHub deploy** posted as a
+PagerDuty change event on the upstream service; PagerDuty then correlates
+the change with the incidents that follow on the same service. The CLI
+fires alert steps with realistic gaps so the cascade is visible in PagerDuty.
+
+| Scenario | GitHub change | Story | Services hit (in order) |
+|---|---|---|---|
+| `bad-payment-deploy`   | `payment-gateway` v2.4.1 by `alice` (PR #412) | NPEs on Amex card auths. Customers can't pay. | payment-gateway → checkout-api → order-service → notification-service |
+| `db-migration-fail`    | `user-auth` v4.11.0 by `bob` (PR #1207) | Long-running schema migration locks the `user_session` table. | user-auth → product-catalog → search-service → recommendation-engine |
+| `memory-leak-recs`     | `recommendation-engine` v3.2.0 by `carol` (PR #89) | Heap leak, OOM-killed in a restart loop. Search & catalog absorb the traffic. | recommendation-engine → search-service → product-catalog |
+| `config-push-gateway`  | `api-gateway-config` cfg-2026.06.09-3 by `dave` (PR #88, surfaces on `user-auth`) | New gateway config strips the `Authorization` header. Everything 401s. | user-auth → checkout-api → order-service → product-catalog |
+| `cache-stampede-search`| `search-service` v1.8.0 by `eve` (PR #304) | TTL drops 60s → 5s. Catalog gets stampeded. | search-service → product-catalog → recommendation-engine |
+| `noisy-neighbour`      | — (no change) | Low-priority info/warning noise sprayed at every service — stress-tests the router. | all 8 technical services |
+
+Each impacts at least one business service via the dependency graph, so
+you'll see `customer-checkout` and/or `product-discovery` degrade as the
+scenario plays out.
+
+### What a scenario actually fires
+
+1. **One change event** to `https://events.pagerduty.com/v2/change/enqueue`
+   using the upstream service's integration key. Payload includes repo,
+   commit SHA, PR number, author, release tag, deploy timestamp, and
+   GitHub links — i.e. what a real GitHub Actions integration would post.
+2. **A 5-second pause** so the change lands ahead of the incidents.
+3. **The alert cascade** to `https://events.pagerduty.com/v2/enqueue`
+   through the orchestration, with `custom_details.service` driving the
+   router. Each affected service receives 3-4 alerts in a ~15-second
+   burst — service-side time-based grouping (see `terraform/services.tf`)
+   collapses each burst into one incident, so a 12-alert scenario produces
+   ~4 incidents (one per affected service), not 12.
+
+Alert summaries describe symptoms only ("Authentication failures elevated").
+Numerical detail (rates, percentages, queue depths) lives in
+`custom_details` so responders see the structured fields without the
+summary feeling synthetic.
+
+Use `--scenario all` to run every scenario in sequence (good for a longer
+demo).
+
+---
+
+## Triggering the response
+
+Once an incident is open, the three incident workflows show up as
+responder-triggerable actions in the PagerDuty UI:
+
+- **SEV-1 response** — posts a status update, then runs the diagnostics
+  automation action
+- **Auto-rollback** — runs the rollback automation action, then posts a
+  follow-up status update
+- **Clear down** — runs the clear-down automation action
+
+The automation actions are inline shell stubs that print what they would
+do in a real environment (`kubectl rollout undo`, `consul kv delete`, etc.).
+In production you'd point them at a real Runbook Automation runner.

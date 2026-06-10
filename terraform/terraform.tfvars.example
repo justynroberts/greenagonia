@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (or pass via -var on the CLI) and fill in.
+# In normal use the `greenagonia` CLI sets all of these for you.
+
+pagerduty_token = "REPLACE_ME"
+environment     = "demo"
+user_email      = "you@example.com"
+user_name       = "Greenagonia Oncall"

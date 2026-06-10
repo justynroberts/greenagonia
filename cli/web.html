@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Greenagonia — Trigger an outage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --pd-green:        #06AC38;
+    --pd-green-bright: #11D44C;
+    --pd-green-dark:   #03812A;
+    --pd-green-tint:   #E8F6EE;
+    --pd-bg:           #F6F7FA;
+    --pd-bg-warm:      #FAFBFD;
+    --pd-card:         #FFFFFF;
+    --pd-text:         #0E1117;
+    --pd-text-muted:   #5B6370;
+    --pd-text-soft:    #8A93A1;
+    --pd-border:       #ECEEF2;
+    --pd-border-mid:   #DEE1E7;
+    --pd-header:       #0A0E27;
+    --sev-red:         #DC2626;
+    --sev-amber:       #EA580C;
+    /* multi-layer shadows — soft + tight ring */
+    --shadow-1: 0 1px 1px rgba(15, 25, 50, 0.04), 0 0 0 1px rgba(15, 25, 50, 0.04);
+    --shadow-2: 0 1px 2px rgba(15, 25, 50, 0.05), 0 2px 8px rgba(15, 25, 50, 0.06), 0 0 0 1px rgba(15, 25, 50, 0.04);
+    --shadow-3: 0 2px 4px rgba(15, 25, 50, 0.06), 0 12px 32px rgba(15, 25, 50, 0.09), 0 0 0 1px rgba(15, 25, 50, 0.04);
+    --shadow-btn: 0 1px 2px rgba(6, 172, 56, 0.28), 0 4px 12px rgba(6, 172, 56, 0.22);
+    --shadow-btn-hover: 0 2px 4px rgba(6, 172, 56, 0.32), 0 10px 22px rgba(6, 172, 56, 0.28);
+    --shadow-modal: 0 24px 60px rgba(10, 14, 39, 0.34), 0 8px 20px rgba(10, 14, 39, 0.18);
+    /* design tokens */
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r-lg: 12px;
+    --r-xl: 16px;
+    --ease: cubic-bezier(0.2, 0.9, 0.3, 1.2);
+    --t-fast: 0.14s var(--ease);
+    --t-med: 0.22s var(--ease);
+    --font-sys: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-sans: "Instrument Sans", var(--font-sys);
+    --font-display: "Bricolage Grotesque", var(--font-sys);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font-sans);
+    background:
+      radial-gradient(900px 400px at -10% -10%, rgba(6, 172, 56, 0.05), transparent 60%),
+      radial-gradient(800px 400px at 110% 0%, rgba(33, 100, 240, 0.04), transparent 60%),
+      radial-gradient(circle at 1px 1px, rgba(15, 25, 50, 0.05) 1px, transparent 0) 0 0 / 22px 22px,
+      var(--pd-bg);
+    color: var(--pd-text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.005em;
+  }
+
+  header.topbar {
+    background:
+      radial-gradient(1200px 200px at 20% -50%, rgba(6,172,56,0.12), transparent 60%),
+      linear-gradient(180deg, #0B102B 0%, #0A0E27 100%);
+    color: white;
+    padding: 14px 30px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    box-shadow: inset 0 -1px 0 rgba(6,172,56,0.22), 0 1px 0 var(--pd-green);
+    position: relative;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: white;
+  }
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+    display: block;
+    filter:
+      drop-shadow(0 4px 14px rgba(6, 172, 56, 0.38))
+      drop-shadow(0 1px 0 rgba(255,255,255,0.06));
+    animation: float 4s ease-in-out infinite;
+    transform-origin: center;
+    transition: transform 0.25s cubic-bezier(.2,.9,.3,1.2);
+  }
+  .brand:hover .brand-mark {
+    transform: rotate(-6deg) scale(1.06);
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-2px); }
+  }
+
+  .brand-name {
+    font-family: var(--font-sys); /* pinned — logo stays exactly as designed */
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -0.45px;
+    line-height: 1;
+    background: linear-gradient(180deg, #FFFFFF 0%, #C5CFE0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    /* fallback for older browsers without background-clip:text */
+    -webkit-text-fill-color: transparent;
+  }
+  .brand-name .accent {
+    background: linear-gradient(180deg, #0BD449 0%, #06AC38 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .brand-divider {
+    width: 1px;
+    height: 22px;
+    background: linear-gradient(180deg, transparent, rgba(255,255,255,0.18), transparent);
+    margin: 0 4px 0 16px;
+  }
+
+  header.topbar .tagline {
+    color: rgba(255,255,255,0.65);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+  }
+  header.topbar .spacer { flex: 1; }
+
+  header.topbar .env-pill {
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.92);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+    backdrop-filter: blur(6px);
+  }
+  header.topbar .env-pill .pulse {
+    width: 7px;
+    height: 7px;
+    background: var(--pd-green);
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(6,172,56,0.45);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(6,172,56,0.45); }
+    70%  { box-shadow: 0 0 0 7px rgba(6,172,56,0); }
+    100% { box-shadow: 0 0 0 0 rgba(6,172,56,0); }
+  }
+
+  main {
+    padding: 40px 32px 64px;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+
+  .intro {
+    margin: 0 0 32px;
+    max-width: 760px;
+  }
+  .intro h2 {
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+    background: linear-gradient(180deg, #0E1117 0%, #2A3140 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .intro p {
+    color: var(--pd-text-muted);
+    font-size: 14.5px;
+    max-width: 660px;
+  }
+  .intro strong { color: var(--pd-text); font-weight: 600; }
+
+  .alert-warn {
+    background: linear-gradient(180deg, #FFF8EE 0%, #FFF3E0 100%);
+    border: 1px solid #FCD9A5;
+    color: #7A3008;
+    padding: 14px 18px;
+    border-radius: var(--r-md);
+    margin: 0 0 24px;
+    font-size: 13px;
+    max-width: 760px;
+    box-shadow: 0 1px 2px rgba(122, 48, 8, 0.05);
+  }
+
+  .scenarios {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 20px;
+  }
+
+  /* ======================= Scenario cards ======================= */
+  .scenario-card {
+    background: var(--pd-card);
+    border-radius: var(--r-lg);
+    padding: 24px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--shadow-2);
+    transition: transform var(--t-med), box-shadow var(--t-med);
+    isolation: isolate;
+  }
+  .scenario-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--pd-green-bright), var(--pd-green) 50%, transparent);
+    opacity: 0;
+    transition: opacity var(--t-med);
+  }
+  .scenario-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(120% 80% at 50% -20%, rgba(6, 172, 56, 0.04), transparent 60%);
+    opacity: 0;
+    transition: opacity var(--t-med);
+    z-index: -1;
+  }
+  .scenario-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-3);
+  }
+  .scenario-card:hover::before,
+  .scenario-card:hover::after { opacity: 1; }
+
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .card-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(80% 80% at 30% 20%, rgba(255,255,255,0.65), transparent 60%),
+      linear-gradient(160deg, #EAF8EF 0%, #D8F0E1 100%);
+    border: 1px solid rgba(6, 172, 56, 0.16);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(6,172,56,0.08);
+    color: var(--pd-green-dark);
+    transition: transform var(--t-med), box-shadow var(--t-med);
+  }
+  .card-icon svg { width: 22px; height: 22px; }
+  .scenario-card:hover .card-icon {
+    transform: scale(1.06) rotate(-3deg);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 4px 10px rgba(6,172,56,0.18);
+  }
+
+  .scenario-card h3 {
+    font-family: var(--font-display);
+    font-size: 18.5px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    line-height: 1.25;
+  }
+
+  .scenario-card .impact {
+    color: var(--pd-text-muted);
+    font-size: 14px;
+    line-height: 1.55;
+    margin-bottom: 22px;
+  }
+
+  .affects {
+    margin-bottom: 22px;
+  }
+  .affects-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--pd-text-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 8px;
+  }
+  .affects-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .affects-chip {
+    font-size: 11.5px;
+    padding: 5px 11px 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #F0FAF3 0%, #E5F4EC 100%);
+    color: var(--pd-green-dark);
+    border: 1px solid rgba(6, 172, 56, 0.18);
+    font-weight: 600;
+    letter-spacing: 0.05px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .affects-chip::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--pd-green);
+    box-shadow: 0 0 0 2px rgba(6, 172, 56, 0.18);
+  }
+
+  /* =========================== Buttons =========================== */
+  .actions {
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 18px;
+    border-top: 1px solid var(--pd-border);
+  }
+  .btn {
+    flex: 1;
+    border: none;
+    padding: 11px 14px;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.05px;
+    transition: transform 0.12s ease, box-shadow var(--t-fast), background var(--t-fast), border-color var(--t-fast), filter var(--t-fast);
+    font-family: var(--font-sans);
+    position: relative;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .btn:focus-visible {
+    outline: 2px solid rgba(6, 172, 56, 0.45);
+    outline-offset: 2px;
+  }
+  .btn svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+  }
+  .btn-primary {
+    color: white;
+    background: linear-gradient(180deg, var(--pd-green-bright) 0%, var(--pd-green) 55%, var(--pd-green-dark) 100%);
+    box-shadow: var(--shadow-btn), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-btn-hover), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    filter: brightness(1.04) saturate(1.05);
+  }
+  .btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(6, 172, 56, 0.32), inset 0 1px 0 rgba(0, 0, 0, 0.04);
+    filter: brightness(0.97);
+  }
+  .btn-secondary {
+    background: white;
+    color: var(--pd-text);
+    border: 1px solid var(--pd-border-mid);
+    box-shadow: 0 1px 1px rgba(15, 25, 50, 0.04);
+  }
+  .btn-secondary:hover {
+    background: #FBFCFD;
+    border-color: #C7CCD5;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(15, 25, 50, 0.06);
+  }
+  .btn-secondary:active {
+    transform: translateY(0);
+    background: #F4F5F8;
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.04);
+  }
+  .btn:disabled {
+    background: #F0F1F4 !important;
+    color: #B0B5BF !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    cursor: not-allowed;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  /* =========================== Details =========================== */
+  .details-link {
+    margin-top: 12px;
+    background: none;
+    border: none;
+    color: var(--pd-text-soft);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    padding: 0;
+    align-self: flex-start;
+    font-family: var(--font-sans);
+    transition: color var(--t-fast);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .details-link::after {
+    content: "›";
+    font-size: 14px;
+    line-height: 1;
+    transition: transform var(--t-fast);
+  }
+  .details-link:hover { color: var(--pd-text); }
+  .details-link:hover::after { transform: translateX(2px); }
+
+  .tech-details {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--pd-border);
+    font-size: 11.5px;
+    color: var(--pd-text-muted);
+    line-height: 1.65;
+    display: none;
+  }
+  .tech-details.open { display: block; animation: revealDown 0.22s ease-out; }
+  @keyframes revealDown {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .tech-details strong { color: var(--pd-text); font-weight: 600; }
+  .tech-details code {
+    font-family: ui-monospace, "SF Mono", Monaco, Consolas, monospace;
+    background: #F1F3F5;
+    padding: 1.5px 5px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    color: var(--pd-text);
+  }
+
+  /* ============================ Run modal ============================ */
+  .modal-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 14, 39, 0.58);
+    backdrop-filter: blur(6px) saturate(140%);
+    -webkit-backdrop-filter: blur(6px) saturate(140%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 100;
+    animation: bgFade 0.18s ease-out;
+  }
+  .modal-bg.open { display: flex; }
+  @keyframes bgFade { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    background: white;
+    border-radius: var(--r-xl);
+    max-width: 480px;
+    width: 100%;
+    overflow: hidden;
+    box-shadow: var(--shadow-modal);
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+    animation: modalIn 0.28s var(--ease);
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .modal-header {
+    padding: 24px 28px 14px;
+    background: linear-gradient(180deg, #FCFDFE 0%, #FFFFFF 100%);
+    border-bottom: 1px solid var(--pd-border);
+  }
+  .modal-eyebrow {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--pd-text-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.9px;
+    margin-bottom: 6px;
+  }
+  .modal-title {
+    font-family: var(--font-display);
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+  }
+
+  .modal-status {
+    padding: 16px 28px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    color: var(--pd-text);
+    background: linear-gradient(180deg, #FBFCFD 0%, #FFFFFF 100%);
+  }
+  .modal-status .spinner {
+    width: 17px;
+    height: 17px;
+    border: 2.5px solid var(--pd-border);
+    border-top-color: var(--pd-green);
+    border-right-color: var(--pd-green);
+    border-radius: 50%;
+    animation: spin 0.85s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .modal-status .check {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, var(--pd-green-bright), var(--pd-green) 70%);
+    color: white;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-weight: 700;
+    box-shadow: 0 1px 2px rgba(6, 172, 56, 0.3), 0 0 0 3px rgba(6, 172, 56, 0.12);
+  }
+
+  /* ========================= Service rows ========================= */
+  .svc-list {
+    padding: 6px 28px 22px;
+    list-style: none;
+    overflow-y: auto;
+  }
+  .svc-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 0;
+    font-size: 14px;
+    border-bottom: 1px solid var(--pd-border);
+    transition: opacity var(--t-fast);
+  }
+  .svc-row:last-child { border-bottom: none; }
+
+  .svc-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--t-med), box-shadow var(--t-med);
+    position: relative;
+  }
+  .svc-row.waiting .svc-mark {
+    background: #E8EAEE;
+    box-shadow: inset 0 0 0 1px rgba(15, 25, 50, 0.06);
+  }
+  .svc-row.waiting .svc-mark::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #B6BCC7;
+  }
+  .svc-row.active .svc-mark {
+    background: linear-gradient(180deg, var(--pd-green-bright), var(--pd-green));
+    box-shadow: 0 0 0 3px rgba(6, 172, 56, 0.16);
+  }
+  .svc-row.active .svc-mark::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border: 2px solid white;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    background: transparent;
+  }
+  .svc-row.done .svc-mark {
+    background: linear-gradient(180deg, var(--pd-green-bright), var(--pd-green));
+    box-shadow: 0 1px 2px rgba(6, 172, 56, 0.3);
+  }
+  .svc-row.done .svc-mark::before {
+    content: "";
+    width: 9px;
+    height: 5px;
+    border-left: 2px solid white;
+    border-bottom: 2px solid white;
+    transform: rotate(-45deg) translate(1px, -1px);
+    background: transparent;
+  }
+
+  .svc-name {
+    flex: 1;
+    font-weight: 500;
+    transition: color var(--t-fast);
+  }
+  .svc-row.waiting .svc-name { color: var(--pd-text-soft); }
+  .svc-row.active .svc-name,
+  .svc-row.done .svc-name   { color: var(--pd-text); }
+
+  .svc-count {
+    font-size: 11.5px;
+    color: var(--pd-text-soft);
+    font-variant-numeric: tabular-nums;
+    background: #F1F3F5;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-weight: 500;
+    transition: background var(--t-fast), color var(--t-fast);
+  }
+  .svc-row.done .svc-count {
+    color: var(--pd-green-dark);
+    background: var(--pd-green-tint);
+    font-weight: 600;
+  }
+
+  .modal-footer {
+    padding: 16px 24px;
+    background: linear-gradient(180deg, #FBFCFD 0%, #F4F6F9 100%);
+    border-top: 1px solid var(--pd-border);
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+  .modal-footer .btn {
+    flex: 0 0 auto;
+    min-width: 120px;
+  }
+
+  .errors {
+    padding: 0 28px 14px;
+    font-size: 12.5px;
+    color: var(--sev-red);
+    font-weight: 500;
+  }
+  .errors:empty { display: none; }
+
+  @media (max-width: 600px) {
+    main { padding: 24px 18px 40px; }
+    header.topbar { padding: 12px 18px; }
+    .scenarios { grid-template-columns: 1fr; }
+    .intro h2 { font-size: 22px; }
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Greenagonia">
+      <svg class="brand-mark" viewBox="0 0 36 36" width="36" height="36" aria-hidden="true">
+        <defs>
+          <linearGradient id="gaTile" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"   stop-color="#10D44A"/>
+            <stop offset="55%"  stop-color="#06AC38"/>
+            <stop offset="100%" stop-color="#03812A"/>
+          </linearGradient>
+          <linearGradient id="gaBolt" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="#FFFFFF"/>
+            <stop offset="100%" stop-color="#E8F5EC"/>
+          </linearGradient>
+          <radialGradient id="gaShine" cx="0.3" cy="0.25" r="0.85">
+            <stop offset="0%"   stop-color="rgba(255,255,255,0.42)"/>
+            <stop offset="55%"  stop-color="rgba(255,255,255,0)"/>
+          </radialGradient>
+        </defs>
+        <rect x="0" y="0" width="36" height="36" rx="10" fill="url(#gaTile)"/>
+        <rect x="0" y="0" width="36" height="36" rx="10" fill="url(#gaShine)"/>
+        <path d="M20.4 6.5 L10.5 20.5 H16.2 L14.8 29.5 L26 13.5 H19.8 Z"
+              fill="url(#gaBolt)"
+              stroke="rgba(3,129,42,0.18)"
+              stroke-width="0.4"
+              stroke-linejoin="round"/>
+      </svg>
+      <span class="brand-name">greenagon<span class="accent">ia</span></span>
+    </a>
+    <span class="brand-divider"></span>
+    <span class="tagline">Trigger an outage</span>
+    <span class="spacer"></span>
+    <span class="env-pill" id="envPill">
+      <span class="pulse"></span>
+      <span id="envName">—</span>
+    </span>
+  </header>
+
+  <main>
+    <div class="intro">
+      <h2>Pick a scenario</h2>
+      <p>Each scenario simulates a real failure mode. Click <strong>Trigger</strong> to create incidents in PagerDuty, and <strong>Resolve</strong> to close them when you're done.</p>
+    </div>
+    <div id="warnArea"></div>
+    <div class="scenarios" id="scenarios"><p style="color: var(--pd-text-secondary);">Loading…</p></div>
+  </main>
+
+  <div class="modal-bg" id="modalBg" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-eyebrow" id="modalEyebrow">TRIGGERING</div>
+        <div class="modal-title" id="modalTitle">—</div>
+      </div>
+      <div class="modal-status" id="modalStatus">
+        <span class="spinner"></span>
+        <span id="modalStatusText">Sending alerts to PagerDuty…</span>
+      </div>
+      <ul class="svc-list" id="svcList"></ul>
+      <div class="errors" id="errArea"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="closeBtn">Close</button>
+        <a class="btn btn-primary" id="pdLink" href="#" target="_blank" rel="noopener" style="display:none; text-decoration: none;"><span>Open PagerDuty</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>
+      </div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+const $ = (s) => document.querySelector(s);
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  if (attrs) for (const [k,v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k === "html") n.innerHTML = v;
+    else n.setAttribute(k, v);
+  }
+  for (const c of kids) if (c != null) n.append(typeof c === "string" ? document.createTextNode(c) : c);
+  return n;
+}
+
+let stateInfo = { deployed: false, env: "—" };
+let currentES = null;
+let pdBase = "https://app.pagerduty.com/incidents";
+
+// Inline SVG icon set — Lucide-style 24px strokes, no framework.
+const SVG = (paths) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+
+const ICONS = {
+  card:     SVG('<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
+  database: SVG('<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>'),
+  cpu:      SVG('<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>'),
+  shield:   SVG('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'),
+  search:   SVG('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'),
+  package:  SVG('<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>'),
+  radio:    SVG('<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.24a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 19.07a10 10 0 0 1 0-14.14"/>'),
+  bolt:     SVG('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'),
+  check:    SVG('<polyline points="20 6 9 17 4 12"/>'),
+  external: SVG('<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>'),
+};
+
+// scenario id → icon
+const SCENARIO_ICONS = {
+  "bad-payment-deploy":    ICONS.card,
+  "db-migration-fail":     ICONS.database,
+  "memory-leak-recs":      ICONS.cpu,
+  "config-push-gateway":   ICONS.shield,
+  "cache-stampede-search": ICONS.search,
+  "k8s-bad-image-rollout": ICONS.package,
+  "noisy-neighbour":       ICONS.radio,
+};
+
+async function init() {
+  try { stateInfo = await fetch("/api/state").then(r => r.json()); }
+  catch { stateInfo = { deployed: false, env: "—" }; }
+  $("#envName").textContent = stateInfo.env || "—";
+
+  if (!stateInfo.deployed) {
+    $("#warnArea").appendChild(
+      el("div", { class: "alert-warn" },
+        "PagerDuty isn't deployed yet for this environment. Run the deploy command before triggering anything.")
+    );
+  }
+
+  let scenarios = [];
+  try { scenarios = await fetch("/api/scenarios").then(r => r.json()); }
+  catch { $("#scenarios").innerHTML = "<p>Couldn't load scenarios.</p>"; return; }
+
+  const grid = $("#scenarios");
+  grid.innerHTML = "";
+  for (const sc of scenarios) grid.appendChild(renderCard(sc));
+}
+
+function renderCard(sc) {
+  const card = el("div", { class: "scenario-card" });
+
+  const head = el("div", { class: "card-head" });
+  head.appendChild(el("span", { class: "card-icon", html: SCENARIO_ICONS[sc.name] || ICONS.bolt }));
+  head.appendChild(el("h3", null, sc.title || sc.name));
+  card.appendChild(head);
+  card.appendChild(el("p", { class: "impact" }, sc.impact || sc.desc || ""));
+
+  if (sc.affects && sc.affects.length) {
+    const aff = el("div", { class: "affects" });
+    aff.appendChild(el("div", { class: "affects-label" }, "Affects"));
+    const chips = el("div", { class: "affects-chips" });
+    for (const a of sc.affects) chips.appendChild(el("span", { class: "affects-chip" }, a));
+    aff.appendChild(chips);
+    card.appendChild(aff);
+  }
+
+  const actions = el("div", { class: "actions" });
+  const trig = el("button", { class: "btn btn-primary", html: ICONS.bolt + "<span>Trigger</span>" });
+  const res = el("button", { class: "btn btn-secondary", html: ICONS.check + "<span>Resolve</span>" });
+  if (!stateInfo.deployed) { trig.disabled = true; res.disabled = true; }
+  trig.addEventListener("click", () => streamScenario(sc, "run"));
+  res.addEventListener("click", () => streamScenario(sc, "resolve"));
+  actions.appendChild(trig);
+  actions.appendChild(res);
+  card.appendChild(actions);
+
+  const dToggle = el("button", { class: "details-link" }, "Show technical details");
+  card.appendChild(dToggle);
+  const det = el("div", { class: "tech-details" });
+  det.innerHTML = `
+    <div><strong>Scenario id:</strong> <code>${sc.name}</code></div>
+    <div style="margin-top:4px;"><strong>Alerts:</strong> ${sc.steps?.length ?? 0} across ${sc.services?.length ?? 0} service(s)</div>
+    <div><strong>Services:</strong> ${(sc.services || []).map(s => `<code>${s}</code>`).join(", ")}</div>
+    ${sc.change ? `
+      <div style="margin-top:4px;"><strong>Triggered by deploy:</strong></div>
+      <div>${sc.change.version || ""} · ${sc.change.author || ""}${sc.change.pr_number ? ` · PR #${sc.change.pr_number}` : ""}</div>
+      ${sc.change.pr_title ? `<div style="color: var(--pd-text-secondary);">${sc.change.pr_title}</div>` : ""}
+    ` : ""}
+    <div style="margin-top:4px; color: var(--pd-text-secondary);">${sc.desc || ""}</div>
+  `;
+  card.appendChild(det);
+  dToggle.addEventListener("click", () => {
+    const open = det.classList.toggle("open");
+    dToggle.textContent = open ? "Hide technical details" : "Show technical details";
+  });
+
+  return card;
+}
+
+function streamScenario(sc, action) {
+  if (currentES) { currentES.close(); currentES = null; }
+
+  const isResolve = action === "resolve";
+  const modal = $("#modalBg");
+  const eyebrow = $("#modalEyebrow");
+  const title = $("#modalTitle");
+  const status = $("#modalStatus");
+  const statusText = $("#modalStatusText");
+  const list = $("#svcList");
+  const err = $("#errArea");
+  const pdLink = $("#pdLink");
+
+  eyebrow.textContent = isResolve ? "RESOLVING" : "TRIGGERING";
+  title.textContent = sc.title || sc.name;
+  statusText.textContent = isResolve
+    ? "Closing incidents in PagerDuty…"
+    : "Sending alerts to PagerDuty…";
+  status.querySelector(".check")?.remove();
+  status.querySelector(".spinner")?.remove();
+  status.prepend(el("span", { class: "spinner" }));
+  err.textContent = "";
+  pdLink.style.display = "none";
+  list.innerHTML = "";
+
+  // pre-build one row per affected service
+  const services = sc.services || [];
+  const perSvc = sc.alerts_per_service || {};
+  const friendly = sc.services_friendly || {};
+  const rows = {};
+  for (const s of services) {
+    const target = perSvc[s] || 0;
+    const row = el("li", { class: "svc-row waiting" },
+      el("span", { class: "svc-mark" }, ""),
+      el("span", { class: "svc-name" }, friendly[s] || s),
+      el("span", { class: "svc-count" }, `0 / ${target}`)
+    );
+    rows[s] = { row, target, done: 0 };
+    list.appendChild(row);
+  }
+
+  modal.classList.add("open");
+
+  const url = `/api/scenarios/${encodeURIComponent(sc.name)}/${action}`;
+  const es = new EventSource(url);
+  currentES = es;
+
+  const markActive = (svc) => {
+    const r = rows[svc];
+    if (!r) return;
+    if (r.done === 0) r.row.classList.remove("waiting"), r.row.classList.add("active");
+  };
+  const markProgress = (svc) => {
+    const r = rows[svc];
+    if (!r) return;
+    r.done++;
+    r.row.querySelector(".svc-count").textContent = `${r.done} / ${r.target}`;
+    if (r.done >= r.target) {
+      r.row.classList.remove("active");
+      r.row.classList.add("done");
+      r.row.querySelector(".svc-mark").textContent = "✓";
+    } else {
+      markActive(svc);
+    }
+  };
+
+  es.addEventListener("change", (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      markActive(d.service);
+    } catch {}
+  });
+  es.addEventListener("step", (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      markProgress(d.service);
+    } catch {}
+  });
+  es.addEventListener("resolved", (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      markProgress(d.service);
+    } catch {}
+  });
+  es.addEventListener("err", (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      err.textContent = (err.textContent ? err.textContent + " · " : "") + (d.message || "error");
+    } catch { err.textContent = "An error occurred."; }
+  });
+  es.addEventListener("done", () => {
+    // mark any still-waiting rows as done (resolve flow may finish faster than expected)
+    for (const s of Object.keys(rows)) {
+      const r = rows[s];
+      if (r.done < r.target) {
+        r.done = r.target;
+        r.row.querySelector(".svc-count").textContent = `${r.target} / ${r.target}`;
+      }
+      r.row.classList.remove("waiting", "active");
+      r.row.classList.add("done");
+      r.row.querySelector(".svc-mark").textContent = "✓";
+    }
+    status.querySelector(".spinner")?.remove();
+    status.prepend(el("span", { class: "check" }, "✓"));
+    const total = services.reduce((acc, s) => acc + (perSvc[s] || 0), 0);
+    const grouped = services.length;
+    statusText.textContent = isResolve
+      ? `Sent ${total} resolve${total === 1 ? "" : "s"}. ${grouped} incident${grouped === 1 ? "" : "s"} closed.`
+      : `Sent ${total} alert${total === 1 ? "" : "s"}. Roughly ${grouped} incident${grouped === 1 ? "" : "s"} will appear (grouped by service).`;
+    pdLink.href = pdBase;
+    pdLink.style.display = "inline-flex";
+    es.close();
+    currentES = null;
+  });
+
+  es.onerror = () => {
+    if (es.readyState === 2) {
+      currentES = null;
+    }
+  };
+}
+
+$("#closeBtn").addEventListener("click", () => {
+  $("#modalBg").classList.remove("open");
+  if (currentES) { currentES.close(); currentES = null; }
+});
+$("#modalBg").addEventListener("click", (e) => {
+  if (e.target.id === "modalBg") {
+    $("#modalBg").classList.remove("open");
+    if (currentES) { currentES.close(); currentES = null; }
+  }
+});
+
+init();
+</script>
+</body>
+</html>

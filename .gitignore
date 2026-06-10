@@ -1,0 +1,17 @@
+# build output
+bin/
+
+# terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
+terraform/terraform.tfstate.d/
+terraform/terraform.tfvars
+terraform/crash.log
+terraform/*.plan
+
+# local env
+.env
+*.local
+.DS_Store
