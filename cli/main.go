@@ -1818,8 +1818,6 @@ func runScenario(state *envState, sc scenario, noDelay bool) error {
 	// 1. Recent changes (backdated 5-25 min so they predate the incident).
 	if len(sc.changes) > 0 {
 		sentAny := false
-		coveredServices := map[string]bool{}
-
 		for _, ch := range sc.changes {
 			key := state.ChangeKeys[ch.service]
 			switch {
@@ -1832,41 +1830,9 @@ func runScenario(state *envState, sc scenario, noDelay bool) error {
 					return fmt.Errorf("change event for %s: %w", ch.service, err)
 				}
 				fmt.Printf("  %s %s  %s %s\n", sevChip("change"), cyan(ch.service), ch.summary, dim(fmt.Sprintf("· %s, %dm ago", ch.sourceTool, ch.agoMinutes)))
-				coveredServices[ch.service] = true
 				sentAny = true
 			}
 		}
-
-		// Broadcast the root-cause change to every other service that will get
-		// alerts — so every triggered incident shows a related change, not just
-		// the root-cause service. Sent silently (no extra CLI output line).
-		if len(state.ChangeKeys) > 0 && len(sc.changes) > 0 {
-			primary := sc.changes[0]
-			upstream := changeEvent{
-				summary:    fmt.Sprintf("Upstream change: %s", primary.summary),
-				sourceTool: primary.sourceTool,
-				custom:     primary.custom,
-				links:      primary.links,
-			}
-			for _, svc := range affectedServices(sc) {
-				if coveredServices[svc] {
-					continue
-				}
-				coveredServices[svc] = true
-				key := state.ChangeKeys[svc]
-				if key == "" {
-					continue
-				}
-				upstream.service = svc
-				upstream.agoMinutes = primary.agoMinutes + 1
-				if err := sendChange(state.regionOf(), key, upstream); err != nil {
-					fmt.Printf("  %s %s  %s\n", sevChip("change"), cyan(svc), dim(fmt.Sprintf("upstream broadcast failed: %v", err)))
-				} else {
-					sentAny = true
-				}
-			}
-		}
-
 		if sentAny && !noDelay {
 			time.Sleep(5 * time.Second)
 		}
@@ -2025,21 +1991,6 @@ func derivePlusEmail(email, tag string) string {
 // resolve` can close it.
 func dedupKey(env, scenarioName, service string, stepIdx int) string {
 	return fmt.Sprintf("greenagonia/%s/%s/%s/%d", env, scenarioName, service, stepIdx)
-}
-
-// affectedServices returns the distinct set of services that appear in a
-// scenario's alert steps — used to broadcast the root-cause change to every
-// service that will have an open incident, so every incident shows a change.
-func affectedServices(sc scenario) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, st := range sc.steps {
-		if !seen[st.service] {
-			seen[st.service] = true
-			out = append(out, st.service)
-		}
-	}
-	return out
 }
 
 func sendChange(region, integrationKey string, ch changeEvent) error {
@@ -2394,7 +2345,6 @@ func streamScenarioRun(w http.ResponseWriter, r *http.Request, sc scenario, stat
 
 	// 1. Recent changes (backdated; see sendChange).
 	sentAnyChange := false
-	coveredServices := map[string]bool{}
 	for _, ch := range sc.changes {
 		key := state.ChangeKeys[ch.service]
 		if key == "" {
@@ -2406,44 +2356,12 @@ func streamScenarioRun(w http.ResponseWriter, r *http.Request, sc scenario, stat
 			continue
 		}
 		sentAnyChange = true
-		coveredServices[ch.service] = true
 		send("change", map[string]any{
 			"service":     ch.service,
 			"summary":     ch.summary,
 			"source_tool": ch.sourceTool,
 			"ago_minutes": ch.agoMinutes,
 		})
-	}
-	// Broadcast the root-cause change to every other service that will get alerts.
-	if len(sc.changes) > 0 && len(state.ChangeKeys) > 0 {
-		primary := sc.changes[0]
-		upstream := changeEvent{
-			summary:    fmt.Sprintf("Upstream change: %s", primary.summary),
-			sourceTool: primary.sourceTool,
-			custom:     primary.custom,
-			links:      primary.links,
-		}
-		for _, svc := range affectedServices(sc) {
-			if coveredServices[svc] {
-				continue
-			}
-			coveredServices[svc] = true
-			key := state.ChangeKeys[svc]
-			if key == "" {
-				continue
-			}
-			upstream.service = svc
-			upstream.agoMinutes = primary.agoMinutes + 1
-			if err := sendChange(state.regionOf(), key, upstream); err == nil {
-				sentAnyChange = true
-				send("change", map[string]any{
-					"service":     svc,
-					"summary":     upstream.summary,
-					"source_tool": upstream.sourceTool,
-					"ago_minutes": upstream.agoMinutes,
-				})
-			}
-		}
 	}
 	if sentAnyChange {
 		select {
