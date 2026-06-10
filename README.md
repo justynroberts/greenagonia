@@ -31,7 +31,7 @@ git clone https://github.com/justynroberts/greenagonia.git && cd greenagonia && 
 | PagerDuty REST API key | **Read/Write**; create at *Integrations → API Access Keys* |
 | A fresh on-call email | must **not** already exist as a user in the PD account; two extra users are derived from it via plus-addressing (`you+oncall2@`, `you+oncall3@`) |
 | (EU accounts) `--region eu` | if your subdomain is `*.eu.pagerduty.com`; wrong region = 401 |
-| (optional) AIOps add-on | for the intelligent alert-grouping the services are configured with |
+| (optional) AIOps add-on | for the content-based alert grouping the services are configured with |
 | (optional) Business/Digital Ops plan | only needed for `--with-workflows` (Incident Workflows) |
 
 What gets created:
@@ -206,14 +206,20 @@ scenario plays out.
 3. **The alert cascade** to `https://events.pagerduty.com/v2/enqueue`
    through the orchestration, with `custom_details.service` driving the
    router. Each affected service receives 3-4 alerts in a ~15-second
-   burst — service-side time-based grouping (see `terraform/services.tf`)
-   collapses each burst into one incident, so a 12-alert scenario produces
-   ~4 incidents (one per affected service), not 12.
+   burst — content-based alert grouping on the `group` + `class` event
+   fields (see `terraform/services.tf`) collapses each burst into one
+   incident deterministically, so a 12-alert scenario produces ~4
+   incidents (one per affected service), not 12. Content-based grouping
+   needs no learning period, unlike intelligent grouping which requires
+   days of per-service alert history before it groups anything.
 
-Alert summaries describe symptoms only ("Authentication failures elevated").
-Numerical detail (rates, percentages, queue depths) lives in
-`custom_details` so responders see the structured fields without the
-summary feeling synthetic.
+Alert summaries are short symptom titles with no service name (the
+PagerDuty service provides that context). Every alert carries a
+human-readable `custom_details.description` ("Delivery delayed by more
+than 60s; current lag is 4 minutes behind real time.") plus structured
+numerical fields (rates, queue depths), a normalized `host` shared across
+the service's burst, and scenario-wide fields (`deploy_id`,
+`root_cause_service`) shared across the whole cascade.
 
 Use `--scenario all` to run every scenario in sequence (good for a longer
 demo).

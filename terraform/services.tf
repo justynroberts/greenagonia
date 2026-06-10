@@ -19,16 +19,19 @@ resource "pagerduty_service" "tech" {
   acknowledgement_timeout = 1800  # seconds — 30m
   alert_creation          = "create_alerts_and_incidents"
 
-  # Intelligent (AIOps) alert grouping: PagerDuty's ML-based engine groups
-  # alerts that look like they're describing the same problem — across
-  # different signals, sources, and time. The scenarios deliberately fire
-  # 3-4 alerts at each affected service in quick succession to give the
-  # grouper something to chew on, so a 12-alert scenario lands as ~4
-  # incidents (one per service) instead of 12.
+  # Content-based alert grouping (AIOps): groups alerts whose listed fields
+  # match exactly. Every alert the CLI sends carries group = <scenario name>
+  # and class = "greenagonia-scenario", so all alerts a scenario fires at
+  # one service collapse into a single incident DETERMINISTICALLY — no
+  # learning period, works on the first run.
   #
-  # Requires the AIOps add-on on your PagerDuty plan. Without it, apply
-  # fails with a 403/feature-not-enabled error — fall back to
-  # type = "time" in that case.
+  # (We previously used type = "intelligent"; its ML model needs days of
+  # historical alert data per service before it groups anything, which on a
+  # fresh demo account looks like "grouping is broken". Content-based is
+  # immediate.)
+  #
+  # Requires the AIOps add-on. Fall back to type = "time" +
+  # config { timeout = 2 } on plans without it.
   #
   # The provider prints a deprecation warning suggesting the separate
   # pagerduty_alert_grouping_setting resource — that resource currently
@@ -36,7 +39,12 @@ resource "pagerduty_service" "tech" {
   # account/plan combination, so we keep the inline block which is the
   # proven path. The warning is harmless.
   alert_grouping_parameters {
-    type = "intelligent"
+    type = "content_based"
+    config {
+      aggregate   = "all"
+      fields      = ["group", "class"]
+      time_window = 600 # seconds — alerts within 10 min with matching fields group
+    }
   }
 }
 
