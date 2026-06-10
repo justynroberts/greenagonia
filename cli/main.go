@@ -280,9 +280,17 @@ type step struct {
 type changeEvent struct {
 	service    string // MUST match a technical_services key (drives lookup of integration key)
 	summary    string
-	sourceTool string // e.g. "GitHub Actions"
+	sourceTool string // e.g. "GitHub Actions", "LaunchDarkly"
+	agoMinutes int    // backdate the change timestamp by this many minutes (0 = random 5-25)
 	custom     map[string]any
 	links      []changeLink
+}
+
+// ago returns a copy backdated by min minutes — changes look like they
+// landed before the incident started, not at the same moment.
+func (c changeEvent) ago(min int) changeEvent {
+	c.agoMinutes = min
+	return c
 }
 
 type scenario struct {
@@ -298,9 +306,9 @@ type scenario struct {
 	// root_cause_service). This is deliberate: PagerDuty's intelligent
 	// grouper keys on matching field values, so shared fields let it
 	// correlate alerts across services, not just within one.
-	shared map[string]any
-	change *changeEvent
-	steps  []step
+	shared  map[string]any
+	changes []changeEvent // posted (backdated) before the alert cascade
+	steps   []step
 }
 
 // Technical-service list — keep in sync with locals.technical_services in
@@ -378,7 +386,7 @@ var serviceMeta = map[string]map[string]any{
 }
 
 // ghChange constructs the simulated bad GitHub push that opens each scenario.
-func ghChange(service, repo, version, author string, prNumber int, prTitle, sha string, extra map[string]any) *changeEvent {
+func ghChange(service, repo, version, author string, prNumber int, prTitle, sha string, extra map[string]any) changeEvent {
 	short := sha
 	if len(short) > 7 {
 		short = sha[:7]
@@ -401,7 +409,7 @@ func ghChange(service, repo, version, author string, prNumber int, prTitle, sha 
 	for k, v := range extra {
 		custom[k] = v
 	}
-	return &changeEvent{
+	return changeEvent{
 		service:    service,
 		summary:    fmt.Sprintf("Deployed %s %s → production (PR #%d: %s)", service, version, prNumber, prTitle),
 		sourceTool: "GitHub Actions",
@@ -410,6 +418,32 @@ func ghChange(service, repo, version, author string, prNumber int, prTitle, sha 
 			{Href: fmt.Sprintf("https://github.com/%s/pull/%d", repo, prNumber), Text: fmt.Sprintf("PR #%d", prNumber)},
 			{Href: fmt.Sprintf("https://github.com/%s/commit/%s", repo, short), Text: "Commit " + short},
 			{Href: fmt.Sprintf("https://github.com/%s/actions/workflows/deploy.yml", repo), Text: "CI deploy workflow"},
+		},
+	}
+}
+
+// ldChange constructs a LaunchDarkly feature-flag change event.
+func ldChange(service, flagKey, change, author string, oldValue, newValue string, extra map[string]any) changeEvent {
+	custom := map[string]any{
+		"source":         "launchdarkly",
+		"flag_key":       flagKey,
+		"environment":    "production",
+		"previous_value": oldValue,
+		"new_value":      newValue,
+		"changed_by":     author,
+		"service":        service,
+	}
+	for k, v := range extra {
+		custom[k] = v
+	}
+	return changeEvent{
+		service:    service,
+		summary:    fmt.Sprintf("Feature flag %s %s (%s → %s)", flagKey, change, oldValue, newValue),
+		sourceTool: "LaunchDarkly",
+		custom:     custom,
+		links: []changeLink{
+			{Href: "https://app.launchdarkly.com/projects/greenagonia/flags/" + flagKey, Text: "Flag: " + flagKey},
+			{Href: "https://app.launchdarkly.com/projects/greenagonia/audit", Text: "LaunchDarkly audit log"},
 		},
 	}
 }
@@ -446,13 +480,23 @@ var scenarios = []scenario{
 			"deploy_id":          "github-deploy-412",
 			"root_cause_service": "payment-gateway",
 		},
-		change: ghChange(
-			"payment-gateway", "greenagonia/payment-gateway",
-			"v2.4.1", "alice@greenagonia.io", 412,
-			"Refactor Amex card auth flow",
-			"a3f9c12ee45b8a2c1d9f8b3c7e5a9d1f2b6c4e8a",
-			map[string]any{"reviewers": []string{"bob", "carol"}, "files_changed": 14, "lines_added": 287, "lines_removed": 41},
-		),
+		changes: []changeEvent{
+			// The deploy went out ~22 min ago…
+			ghChange(
+				"payment-gateway", "greenagonia/payment-gateway",
+				"v2.4.1", "alice@greenagonia.io", 412,
+				"Refactor Amex card auth flow",
+				"a3f9c12ee45b8a2c1d9f8b3c7e5a9d1f2b6c4e8a",
+				map[string]any{"reviewers": []string{"bob", "carol"}, "files_changed": 14, "lines_added": 287, "lines_removed": 41},
+			).ago(22),
+			// …and the flag ramp 9 min ago is what exposed the bug.
+			ldChange(
+				"payment-gateway", "amex-new-auth-flow",
+				"ramped", "alice@greenagonia.io",
+				"25% rollout", "100% rollout",
+				map[string]any{"flag_kind": "release", "targeting": "all card-brand=amex traffic"},
+			).ago(9),
+		},
 		steps: []step{
 			// payment-gateway — burst of 4
 			alertStep(0, "payment-gateway", "Authentication failures elevated",
@@ -522,13 +566,13 @@ var scenarios = []scenario{
 			"deploy_id":          "github-deploy-1207",
 			"root_cause_service": "user-auth",
 		},
-		change: ghChange(
+		changes: []changeEvent{ghChange(
 			"user-auth", "greenagonia/user-auth",
 			"v4.11.0", "bob@greenagonia.io", 1207,
 			"Migrate user_session.id from BIGINT to UUID",
 			"7b2e9d34c8a1f6b5e3d2c7a9b8f1e6d4c3b2a1f0",
 			map[string]any{"migration_id": "0427_session_uuid", "estimated_runtime_sec": 45, "actual_runtime_sec": ">300 (still running)"},
-		),
+		).ago(12)},
 		steps: []step{
 			// user-auth — burst of 4
 			alertStep(0, "user-auth", "Login latency elevated",
@@ -598,13 +642,13 @@ var scenarios = []scenario{
 			"deploy_id":          "github-deploy-89",
 			"root_cause_service": "recommendation-engine",
 		},
-		change: ghChange(
+		changes: []changeEvent{ghChange(
 			"recommendation-engine", "greenagonia/recommendation-engine",
 			"v3.2.0", "carol@greenagonia.io", 89,
 			"Add cohort-based ranking experiment",
 			"e1d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0",
 			map[string]any{"feature_flag": "cohort_ranking_v3", "rollout_pct": 100, "experiment_owner": "data-platform"},
-		),
+		).ago(18)},
 		steps: []step{
 			// recommendation-engine — burst of 4
 			alertStep(0, "recommendation-engine", "OOMKilled containers",
@@ -667,13 +711,13 @@ var scenarios = []scenario{
 		// Attached to user-auth because it's the first and most-impacted service;
 		// metadata makes clear the change is in a gateway config repo, not the
 		// service's own repo.
-		change: ghChange(
+		changes: []changeEvent{ghChange(
 			"user-auth", "greenagonia/api-gateway-config",
 			"cfg-2026.06.09-3", "dave@greenagonia.io", 88,
 			"Tighten upstream header allowlist",
 			"f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6",
 			map[string]any{"config_file": "routes/auth.yaml", "change_type": "header_allowlist", "header_removed": "Authorization", "rollout_minutes": 0},
-		),
+		).ago(6)},
 		steps: []step{
 			// user-auth — burst of 4
 			alertStep(0, "user-auth", "Authorization failures elevated",
@@ -743,13 +787,13 @@ var scenarios = []scenario{
 			"deploy_id":          "github-deploy-304",
 			"root_cause_service": "search-service",
 		},
-		change: ghChange(
+		changes: []changeEvent{ghChange(
 			"search-service", "greenagonia/search-service",
 			"v1.8.0", "eve@greenagonia.io", 304,
 			"Tighten cache TTL to improve freshness",
 			"c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5",
 			map[string]any{"old_ttl_sec": 60, "new_ttl_sec": 5, "intent": "improve search result freshness"},
-		),
+		).ago(15)},
 		steps: []step{
 			// search-service — burst of 4
 			alertStep(0, "search-service", "Cache hit ratio dropped",
@@ -814,7 +858,7 @@ var scenarios = []scenario{
 		// the new pods immediately CrashLoop. Sources are realistic k8s
 		// pod / control-plane component names so the AIOps grouper sees
 		// host correlation as well as service correlation.
-		change: ghChange(
+		changes: []changeEvent{ghChange(
 			"recommendation-engine", "greenagonia/recommendation-engine",
 			"v3.3.0", "frank@greenagonia.io", 94,
 			"Switch to slimmer alpine base image",
@@ -828,7 +872,7 @@ var scenarios = []scenario{
 				"k8s_namespace":  "recommendations",
 				"sync_revision":  "argocd-sync-2026.06.09-04",
 			},
-		),
+		).ago(8)},
 		steps: []step{
 			// recommendation-engine — pod-level alerts on the bad ReplicaSet.
 			// Three pods of the new ReplicaSet all fail the same way; the
@@ -893,7 +937,16 @@ var scenarios = []scenario{
 		impact:  "Low-priority alerts from across the platform — used to test that the router and grouping handle volume cleanly.",
 		affects: []string{"Platform-Wide"},
 		desc:    "Low-priority noise spread across every service — stress-tests the router.",
-		// no change event — pure noise. steps populated by init().
+		// A routine, INNOCENT deploy — a red herring. Realistic accounts
+		// always have unrelated changes in flight; responders should learn
+		// not to blame the nearest deploy. steps populated by init().
+		changes: []changeEvent{ghChange(
+			"notification-service", "greenagonia/notification-service",
+			"v5.2.1", "grace@greenagonia.io", 451,
+			"Bump dependencies (routine weekly update)",
+			"d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3",
+			map[string]any{"files_changed": 2, "lines_added": 18, "lines_removed": 18, "risk": "low", "automated": true},
+		).ago(24)},
 	},
 }
 
@@ -1595,7 +1648,7 @@ func resolveScenariosCmd(args []string) {
 
 func renderScenarioCard(sc scenario) {
 	badges := []string{}
-	if sc.change != nil {
+	if len(sc.changes) > 0 {
 		badges = append(badges, sevChip("change"))
 	}
 
@@ -1603,23 +1656,25 @@ func renderScenarioCard(sc scenario) {
 	body = append(body, gray(sc.desc))
 	body = append(body, "")
 
-	if sc.change != nil {
+	for _, ch := range sc.changes {
 		var tag, author, repo string
 		var prNum any
 		var prTitle string
-		if v, ok := sc.change.custom["release_tag"].(string); ok {
+		if v, ok := ch.custom["release_tag"].(string); ok {
 			tag = v
 		}
-		if v, ok := sc.change.custom["author"].(string); ok {
+		if v, ok := ch.custom["author"].(string); ok {
+			author = v
+		} else if v, ok := ch.custom["changed_by"].(string); ok {
 			author = v
 		}
-		if v, ok := sc.change.custom["repository"].(string); ok {
+		if v, ok := ch.custom["repository"].(string); ok {
 			repo = v
 		}
-		if v, ok := sc.change.custom["pr_number"]; ok {
+		if v, ok := ch.custom["pr_number"]; ok {
 			prNum = v
 		}
-		if v, ok := sc.change.custom["pr_title"].(string); ok {
+		if v, ok := ch.custom["pr_title"].(string); ok {
 			prTitle = v
 		}
 		head := []string{}
@@ -1632,6 +1687,10 @@ func renderScenarioCard(sc scenario) {
 		if prNum != nil {
 			head = append(head, fmt.Sprintf("PR #%v", prNum))
 		}
+		if flag, ok := ch.custom["flag_key"].(string); ok {
+			head = append(head, bold("flag:"+flag))
+		}
+		head = append(head, dim(fmt.Sprintf("%s · %dm ago", ch.sourceTool, ch.agoMinutes)))
 		body = append(body, pdGreen("▸ change ")+" "+strings.Join(head, " · "))
 		if prTitle != "" {
 			body = append(body, "            "+dim(prTitle))
@@ -1639,6 +1698,8 @@ func renderScenarioCard(sc scenario) {
 		if repo != "" {
 			body = append(body, "            "+dim(repo))
 		}
+	}
+	if len(sc.changes) > 0 {
 		body = append(body, "")
 	}
 
@@ -1748,28 +1809,32 @@ func findScenario(name string) *scenario {
 func runScenario(state *envState, sc scenario, noDelay bool) error {
 	// Header card
 	badges := []string{}
-	if sc.change != nil {
+	if len(sc.changes) > 0 {
 		badges = append(badges, sevChip("change"))
 	}
 	card(sc.name, badges, []string{gray(sc.desc)})
 	fmt.Println()
 
-	// 1. Bad GitHub push (if the scenario has one).
-	if sc.change != nil {
-		key := state.ChangeKeys[sc.change.service]
-		switch {
-		case key == "" && len(state.ChangeKeys) == 0:
-			fmt.Printf("  %s %s  %s\n", sevChip("change"), cyan(sc.change.service), dim("skipped (no per-service keys — using --routing-key?)"))
-		case key == "":
-			fmt.Printf("  %s %s  %s\n", sevChip("change"), cyan(sc.change.service), dim("skipped (no integration key for service)"))
-		default:
-			if err := sendChange(state.regionOf(), key, *sc.change); err != nil {
-				return fmt.Errorf("change event for %s: %w", sc.change.service, err)
+	// 1. Recent changes (backdated 5-25 min so they predate the incident).
+	if len(sc.changes) > 0 {
+		sentAny := false
+		for _, ch := range sc.changes {
+			key := state.ChangeKeys[ch.service]
+			switch {
+			case key == "" && len(state.ChangeKeys) == 0:
+				fmt.Printf("  %s %s  %s\n", sevChip("change"), cyan(ch.service), dim("skipped (no per-service keys — using --routing-key?)"))
+			case key == "":
+				fmt.Printf("  %s %s  %s\n", sevChip("change"), cyan(ch.service), dim("skipped (no integration key for service)"))
+			default:
+				if err := sendChange(state.regionOf(), key, ch); err != nil {
+					return fmt.Errorf("change event for %s: %w", ch.service, err)
+				}
+				fmt.Printf("  %s %s  %s %s\n", sevChip("change"), cyan(ch.service), ch.summary, dim(fmt.Sprintf("· %s, %dm ago", ch.sourceTool, ch.agoMinutes)))
+				sentAny = true
 			}
-			fmt.Printf("  %s %s  %s\n", sevChip("change"), cyan(sc.change.service), sc.change.summary)
-			if !noDelay {
-				time.Sleep(5 * time.Second)
-			}
+		}
+		if sentAny && !noDelay {
+			time.Sleep(5 * time.Second)
 		}
 		fmt.Println()
 	}
@@ -1929,11 +1994,18 @@ func dedupKey(env, scenarioName, service string, stepIdx int) string {
 }
 
 func sendChange(region, integrationKey string, ch changeEvent) error {
+	// Backdate the change so it predates the incident — real changes land
+	// minutes before the pages start, not at the same instant.
+	ago := ch.agoMinutes
+	if ago <= 0 {
+		ago = 5 + rand.Intn(21) // 5..25 minutes
+	}
+	ts := time.Now().Add(-time.Duration(ago) * time.Minute).UTC().Format(time.RFC3339)
 	body, err := json.Marshal(pdChange{
 		RoutingKey: integrationKey,
 		Payload: changePayload{
 			Summary:       ch.summary,
-			Timestamp:     time.Now().UTC().Format(time.RFC3339),
+			Timestamp:     ts,
 			Source:        ch.sourceTool,
 			CustomDetails: ch.custom,
 		},
@@ -2079,8 +2151,8 @@ func apiScenariosHandler(w http.ResponseWriter, r *http.Request) {
 		Title       string         `json:"title"`
 		Impact      string         `json:"impact"`
 		Affects     []string       `json:"affects"`
-		Desc        string         `json:"desc"`        // technical line for "details" view
-		Change      map[string]any `json:"change"`      // simplified: who deployed what
+		Desc        string           `json:"desc"`    // technical line for "details" view
+		Changes     []map[string]any `json:"changes"` // simplified: who changed what, how long ago
 		Services    []string       `json:"services"`    // technical service IDs (kebab-case)
 		ServicesFriendly map[string]string `json:"services_friendly"` // kebab → "Title Case"
 		AlertsPerService map[string]int    `json:"alerts_per_service"`
@@ -2103,22 +2175,31 @@ func apiScenariosHandler(w http.ResponseWriter, r *http.Request) {
 			Affects: s.affects,
 			Desc:    s.desc,
 		}
-		if s.change != nil {
-			ch := map[string]any{}
-			if v, ok := s.change.custom["release_tag"].(string); ok && v != "" {
+		for _, c := range s.changes {
+			ch := map[string]any{
+				"service":     c.service,
+				"source_tool": c.sourceTool,
+				"ago_minutes": c.agoMinutes,
+				"summary":     c.summary,
+			}
+			if v, ok := c.custom["release_tag"].(string); ok && v != "" {
 				ch["version"] = v
 			}
-			if v, ok := s.change.custom["author"].(string); ok && v != "" {
+			if v, ok := c.custom["author"].(string); ok && v != "" {
+				ch["author"] = v
+			} else if v, ok := c.custom["changed_by"].(string); ok && v != "" {
 				ch["author"] = v
 			}
-			if v, ok := s.change.custom["pr_number"]; ok {
+			if v, ok := c.custom["pr_number"]; ok {
 				ch["pr_number"] = v
 			}
-			if v, ok := s.change.custom["pr_title"].(string); ok && v != "" {
+			if v, ok := c.custom["pr_title"].(string); ok && v != "" {
 				ch["pr_title"] = v
 			}
-			ch["service"] = s.change.service
-			sj.Change = ch
+			if v, ok := c.custom["flag_key"].(string); ok && v != "" {
+				ch["flag_key"] = v
+			}
+			sj.Changes = append(sj.Changes, ch)
 		}
 		seen := map[string]bool{}
 		perSvc := map[string]int{}
@@ -2262,23 +2343,31 @@ func streamScenarioRun(w http.ResponseWriter, r *http.Request, sc scenario, stat
 
 	send("info", map[string]any{"message": fmt.Sprintf("starting %s (%d alert step(s))", sc.name, len(sc.steps))})
 
-	// 1. Change event (if any).
-	if sc.change != nil {
-		key := state.ChangeKeys[sc.change.service]
+	// 1. Recent changes (backdated; see sendChange).
+	sentAnyChange := false
+	for _, ch := range sc.changes {
+		key := state.ChangeKeys[ch.service]
 		if key == "" {
-			send("err", map[string]any{"message": fmt.Sprintf("no change-event key for service %s", sc.change.service)})
-		} else if err := sendChange(state.regionOf(), key, *sc.change); err != nil {
+			send("err", map[string]any{"message": fmt.Sprintf("no change-event key for service %s", ch.service)})
+			continue
+		}
+		if err := sendChange(state.regionOf(), key, ch); err != nil {
 			send("err", map[string]any{"message": fmt.Sprintf("change event: %v", err)})
-		} else {
-			send("change", map[string]any{
-				"service": sc.change.service,
-				"summary": sc.change.summary,
-			})
-			select {
-			case <-time.After(3 * time.Second):
-			case <-r.Context().Done():
-				return
-			}
+			continue
+		}
+		sentAnyChange = true
+		send("change", map[string]any{
+			"service":     ch.service,
+			"summary":     ch.summary,
+			"source_tool": ch.sourceTool,
+			"ago_minutes": ch.agoMinutes,
+		})
+	}
+	if sentAnyChange {
+		select {
+		case <-time.After(3 * time.Second):
+		case <-r.Context().Done():
+			return
 		}
 	}
 

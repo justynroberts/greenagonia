@@ -848,11 +848,11 @@ function renderCard(sc) {
     <div><strong>Scenario id:</strong> <code>${sc.name}</code></div>
     <div style="margin-top:4px;"><strong>Alerts:</strong> ${sc.steps?.length ?? 0} across ${sc.services?.length ?? 0} service(s)</div>
     <div><strong>Services:</strong> ${(sc.services || []).map(s => `<code>${s}</code>`).join(", ")}</div>
-    ${sc.change ? `
-      <div style="margin-top:4px;"><strong>Triggered by deploy:</strong></div>
-      <div>${sc.change.version || ""} · ${sc.change.author || ""}${sc.change.pr_number ? ` · PR #${sc.change.pr_number}` : ""}</div>
-      ${sc.change.pr_title ? `<div style="color: var(--pd-text-secondary);">${sc.change.pr_title}</div>` : ""}
-    ` : ""}
+    ${(sc.changes || []).map(ch => `
+      <div style="margin-top:4px;"><strong>${ch.source_tool === "LaunchDarkly" ? "Feature-flag change" : "Deploy"}:</strong> ${ch.ago_minutes ? `<span style="color: var(--pd-text-secondary);">${ch.ago_minutes}m before incident</span>` : ""}</div>
+      <div>${ch.flag_key ? `<code>${ch.flag_key}</code> · ` : ""}${ch.version || ""}${ch.author ? ` · ${ch.author}` : ""}${ch.pr_number ? ` · PR #${ch.pr_number}` : ""}</div>
+      ${ch.pr_title ? `<div style="color: var(--pd-text-secondary);">${ch.pr_title}</div>` : ""}
+    `).join("")}
     <div style="margin-top:4px; color: var(--pd-text-secondary);">${sc.desc || ""}</div>
   `;
   card.appendChild(det);
