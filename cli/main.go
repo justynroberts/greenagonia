@@ -1,11 +1,13 @@
 // greenagonia — deploy & demo the Greenagonia PagerDuty environment.
 //
-// Three subcommands:
+// Subcommands:
 //
 //	greenagonia deploy    --api-token <t> --email <e> [--env <name>] [--user-name <n>]
 //	greenagonia undeploy  --api-token <t> [--env <name>]
 //	greenagonia scenarios list
 //	greenagonia scenarios run [--env <name>] [--scenario <name>] [--repeat N] [--no-delay] [--routing-key <k>]
+//	greenagonia web       [--env <name>] [--site-url <u>] [--no-open]
+//	greenagonia site-url  <url> [--env <name>]
 //
 // deploy/undeploy shell out to terraform (which must be on PATH) and use a
 // per-env workspace so several environments can coexist in the same PagerDuty
@@ -22,30 +24,37 @@
 //   - Alert events to https://events.pagerduty.com/v2/enqueue, using the
 //     orchestration routing key. Every payload carries custom_details.service
 //     so the router in main.tf fans events out to the right service.
+//
+// web serves the embedded Greenagonia storefront (shared-usage/shared-site)
+// locally and opens it in the browser with the routing key and change-event
+// keys pre-loaded as URL parameters. Set a hosted URL with site-url to skip
+// the local server and open the external site directly.
 package main
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
-	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
 
-//go:embed web.html
-var webHTML string
+//go:embed site
+var siteFS embed.FS
 
 // ===========================================================================
 // Style — TTY-aware colours, severity chips, hyperlinks, boxed cards
@@ -293,6 +302,17 @@ func (c changeEvent) ago(min int) changeEvent {
 	return c
 }
 
+// scenarioUI holds browser-only fields that drive the checkout simulation.
+// They are included in the scenarios dump-json output and ignored by the CLI
+// trigger/resolve paths.
+type scenarioUI struct {
+	FailStep    string `json:"fail_step"`    // checkout step to fail at: validate|inventory|payment|order|confirm
+	SlowFactor  int    `json:"slow_factor"`  // checkout animation speed multiplier
+	ErrorCode   string `json:"error_code"`   // technical code shown in the failure UI
+	Component   string `json:"component"`    // service that owns the failure (for UI colouring)
+	UserMessage string `json:"user_message"` // customer-facing error copy
+}
+
 type scenario struct {
 	name   string
 	desc   string
@@ -301,6 +321,7 @@ type scenario struct {
 	title   string
 	impact  string   // customer-facing consequence in plain language
 	affects []string // business-area names (not technical services)
+	ui      scenarioUI
 	// shared lands in custom_details of EVERY alert in this scenario —
 	// identical values across the whole cascade (deploy_id, release,
 	// root_cause_service). This is deliberate: PagerDuty's intelligent
@@ -329,6 +350,7 @@ var commonFields = map[string]any{
 	"kubernetes":        true,
 	"monitoring_system": "datadog",
 	"datacenter":        "aws-use1",
+	"runbook_url":       map[string]any{"github": "https://raw.githubusercontent.com/greenagonia/runbooks/refs/heads/main/runbook.md"},
 }
 
 // serviceMeta is per-service constant context — namespace, owning team,
@@ -475,6 +497,13 @@ var scenarios = []scenario{
 		impact:  "Customers can't complete payment at checkout. Orders are failing and confirmation emails are backing up.",
 		affects: []string{"Customer Checkout", "Order Processing"},
 		desc:    "payment-gateway v2.4.1 cascade — payment, checkout, orders, notifications.",
+		ui: scenarioUI{
+			FailStep:    "payment",
+			SlowFactor:  4,
+			ErrorCode:   "GATEWAY_TIMEOUT_504",
+			Component:   "payment-gateway",
+			UserMessage: "Our payment provider is taking too long to respond. You have not been charged.",
+		},
 		shared: map[string]any{
 			"release":            "v2.4.1",
 			"deploy_id":          "github-deploy-412",
@@ -561,6 +590,13 @@ var scenarios = []scenario{
 		impact:  "Customers can't log in. Product browsing and search are degraded across the site.",
 		affects: []string{"Customer Login", "Browse & Discover"},
 		desc:    "Long-running schema migration locks user_session — auth, catalog, search, recs degrade.",
+		ui: scenarioUI{
+			FailStep:    "validate",
+			SlowFactor:  3,
+			ErrorCode:   "AUTH_SERVICE_UNAVAILABLE",
+			Component:   "user-auth",
+			UserMessage: "We couldn't verify your account details. Please try again in a moment.",
+		},
 		shared: map[string]any{
 			"migration_id":       "0427_session_uuid",
 			"deploy_id":          "github-deploy-1207",
@@ -637,6 +673,13 @@ var scenarios = []scenario{
 		impact:  "Product recommendations are unavailable. Search is slower and the catalog is overloaded.",
 		affects: []string{"Browse & Discover"},
 		desc:    "recommendation-engine v3.2 leaks heap — OOM-kill loop drives load into search & catalog.",
+		ui: scenarioUI{
+			FailStep:    "inventory",
+			SlowFactor:  3,
+			ErrorCode:   "INVENTORY_SERVICE_TIMEOUT",
+			Component:   "recommendation-engine",
+			UserMessage: "We couldn't load product availability right now. Please try again shortly.",
+		},
 		shared: map[string]any{
 			"release":            "v3.2.0",
 			"deploy_id":          "github-deploy-89",
@@ -703,6 +746,13 @@ var scenarios = []scenario{
 		impact:  "Site-wide impact. Customers can't log in, pay, or browse — everything is returning 401.",
 		affects: []string{"Customer Login", "Customer Checkout", "Browse & Discover"},
 		desc:    "Bad API-gateway config drops the Authorization header — every downstream 401s.",
+		ui: scenarioUI{
+			FailStep:    "validate",
+			SlowFactor:  2,
+			ErrorCode:   "AUTHENTICATION_REQUIRED",
+			Component:   "user-auth",
+			UserMessage: "We couldn't verify your account details. Please try again in a moment.",
+		},
 		shared: map[string]any{
 			"config_version":     "gateway-cfg-2026.06.09-3",
 			"deploy_id":          "github-deploy-88",
@@ -782,6 +832,13 @@ var scenarios = []scenario{
 		impact:  "Search is slow and product browsing is degraded. Recommendations are serving stale results.",
 		affects: []string{"Browse & Discover"},
 		desc:    "Bad TTL change in search-service — cache stampede overloads catalog.",
+		ui: scenarioUI{
+			FailStep:    "inventory",
+			SlowFactor:  3,
+			ErrorCode:   "CATALOG_SERVICE_TIMEOUT",
+			Component:   "search-service",
+			UserMessage: "We couldn't check item availability right now. Please try again shortly.",
+		},
 		shared: map[string]any{
 			"release":            "v1.8.0",
 			"deploy_id":          "github-deploy-304",
@@ -848,6 +905,13 @@ var scenarios = []scenario{
 		impact:  "Recommendation pods are crash-looping. Browse experience is degraded.",
 		affects: []string{"Browse & Discover"},
 		desc:    "Bad container image rollout — recommendation-engine pods CrashLoopBackOff, downstream degrades.",
+		ui: scenarioUI{
+			FailStep:    "inventory",
+			SlowFactor:  3,
+			ErrorCode:   "RECOMMENDATION_SERVICE_UNAVAILABLE",
+			Component:   "recommendation-engine",
+			UserMessage: "We couldn't load your personalised selections. Please try again shortly.",
+		},
 		shared: map[string]any{
 			"release":            "v3.3.0",
 			"deploy_id":          "argocd-sync-2026.06.09-04",
@@ -937,6 +1001,13 @@ var scenarios = []scenario{
 		impact:  "Low-priority alerts from across the platform — used to test that the router and grouping handle volume cleanly.",
 		affects: []string{"Platform-Wide"},
 		desc:    "Low-priority noise spread across every service — stress-tests the router.",
+		ui: scenarioUI{
+			FailStep:    "order",
+			SlowFactor:  2,
+			ErrorCode:   "ORDER_SERVICE_DEGRADED",
+			Component:   "order-service",
+			UserMessage: "Something went wrong creating your order. You have not been charged.",
+		},
 		// A routine, INNOCENT deploy — a red herring. Realistic accounts
 		// always have unrelated changes in flight; responders should learn
 		// not to blame the nearest deploy. steps populated by init().
@@ -988,6 +1059,7 @@ type envState struct {
 	Region     string            `json:"region,omitempty"` // "us" | "eu"; default "us" if empty
 	RoutingKey string            `json:"routing_key"`
 	ChangeKeys map[string]string `json:"change_keys"`
+	SiteURL    string            `json:"site_url,omitempty"` // base URL for the storefront; default localhost:8080
 	UpdatedAt  string            `json:"updated_at"`
 }
 
@@ -1062,6 +1134,8 @@ func main() {
 		cmdScenarios(os.Args[2:])
 	case "web":
 		cmdWeb(os.Args[2:])
+	case "site-url":
+		cmdSiteURL(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -1082,7 +1156,8 @@ func usage() {
   greenagonia scenarios run     [--env <name>] --scenario <name> [--repeat N] [--no-delay]
                                 [--routing-key <k> [--region us|eu]]
   greenagonia scenarios resolve [--env <name>] --scenario <name|all>   # close incidents
-  greenagonia web       [--env <name>] [--addr :8080]              # browser UI
+  greenagonia web       [--env <name>] [--site-url <u>] [--no-open]    # open storefront
+  greenagonia site-url  <url>  [--env <name>]                           # set hosted URL
 
 environment variables (override flag defaults):
   PAGERDUTY_TOKEN     used by --api-token
@@ -1096,6 +1171,10 @@ file so scenarios fire against the right Events API host automatically.
 after a successful deploy, the routing key and per-service change-event
 keys are saved to ~/.greenagonia/<env>.json, so 'scenarios run --env <name>'
 needs no further flags.
+
+'greenagonia web' serves the embedded storefront on localhost and opens it in
+the browser with your routing key pre-loaded. Use 'greenagonia site-url' to
+point at a hosted copy instead (no local server is started for external URLs).
 
 terraform must be on PATH for deploy / undeploy.
 run 'greenagonia setup' for the full start-to-finish walkthrough.`)
@@ -1253,25 +1332,31 @@ A start-to-finish walkthrough. Skip any step you've already done.
 
 
 ------------------------------------------------------------------------
- STEP 8 ── Drive incidents through it
+ STEP 8 ── Open the storefront
 ------------------------------------------------------------------------
+
+    ./bin/greenagonia web --env prod
+
+  This serves the embedded Greenagonia e-commerce site on localhost:8080
+  and opens it in your browser with the routing key pre-loaded. The
+  checkout fails on demand — clicking "Pay" fires the bad-payment-deploy
+  cascade directly from the browser, just like the CLI scenario does.
+
+  Hosted elsewhere (GitHub Pages, EC2, etc.)?
+
+    ./bin/greenagonia site-url http://your-host --env prod
+    ./bin/greenagonia web --env prod   # opens external URL, no local server
+
+  Or trigger a scenario directly from the CLI:
 
     ./bin/greenagonia scenarios list
     ./bin/greenagonia scenarios run --env prod --scenario bad-payment-deploy
 
-  Each scenario fires three things in order:
+  Useful flags for scenarios run:
 
-    1. A simulated GitHub deploy (change event on the affected service).
-       PagerDuty correlates it with the incidents that follow.
-    2. A short pause so the change lands first.
-    3. An alert cascade matching the bad-code story — typically the
-       affected service goes critical, then downstream services follow.
-
-  Useful flags:
-
-    --repeat N    run the scenario N times back-to-back
-    --no-delay    skip the realistic inter-step pauses
-    --scenario all   run every scenario in sequence
+    --repeat N          run the scenario N times back-to-back
+    --no-delay          skip the realistic inter-step pauses
+    --scenario all      run every scenario in sequence
 
 
 ------------------------------------------------------------------------
@@ -1314,7 +1399,8 @@ A start-to-finish walkthrough. Skip any step you've already done.
   terraform/    main.tf, users.tf, services.tf, orchestration.tf,
                 automation.tf, workflows.tf, variables.tf, outputs.tf
   cli/          go.mod, main.go (single-file Go, stdlib only)
-  Makefile      build / build-all / clean / fmt / vet
+                cli/site/ — generated by make build (gitignored); embeds shared-site
+  Makefile      build / build-all / clean / sync-site / fmt / vet
   README.md     longer-form reference
 
 ========================================================================
@@ -1401,8 +1487,17 @@ func cmdDeploy(args []string) {
 		fmt.Fprintf(os.Stderr, "\nwarn: could not save state file: %v\n", err)
 	}
 
+	// Build the ready-to-use storefront URL.
+	changeKey := changeKeys["payment-gateway"]
+	q := url.Values{}
+	q.Set("pdkey", routingKey)
+	if changeKey != "" {
+		q.Set("pdchangekey", changeKey)
+		q.Set("pdldkey", changeKey)
+	}
+	storefrontURL := "http://localhost:8080/?" + q.Encode()
+
 	// Pretty summary card
-	maskedKey := maskKey(routingKey)
 	pdHome := "https://app.pagerduty.com/"
 	if reg == "eu" {
 		pdHome = "https://app.eu.pagerduty.com/"
@@ -1414,7 +1509,6 @@ func cmdDeploy(args []string) {
 		"",
 		fmt.Sprintf("    %s  %s", dim("env         "), pdGreen(*env)),
 		fmt.Sprintf("    %s  %s", dim("region      "), bold(strings.ToUpper(reg))),
-		fmt.Sprintf("    %s  %s", dim("routing key "), cyan(maskedKey)),
 		fmt.Sprintf("    %s  %d %s", dim("change keys "), len(changeKeys), dim("services")),
 		fmt.Sprintf("    %s  %s", dim("on-call     "), cyan("3 users on weekly rotation")),
 		fmt.Sprintf("    %s    %s", dim("            "), dim("primary:   ")+*email),
@@ -1429,9 +1523,11 @@ func cmdDeploy(args []string) {
 	body = append(body, "@DIV")
 	body = append(body, "")
 	body = append(body, dim("    try:"))
-	body = append(body, "    "+pdGreen("›")+" greenagonia scenarios list")
-	body = append(body, "    "+pdGreen("›")+" greenagonia scenarios run --env "+*env+" --scenario bad-payment-deploy")
 	body = append(body, "    "+pdGreen("›")+" greenagonia web --env "+*env)
+	body = append(body, "    "+pdGreenSoft("  storefront  ")+dim(storefrontURL))
+	body = append(body, "")
+	body = append(body, dim("    or run a scenario directly:"))
+	body = append(body, "    "+pdGreen("›")+" greenagonia scenarios run --env "+*env+" --scenario bad-payment-deploy")
 	body = append(body, "")
 
 	fmt.Println()
@@ -1553,9 +1649,101 @@ func defaultTfDir() string {
 // scenarios
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// scenarios dump-json output types
+// ---------------------------------------------------------------------------
+
+type scenariosDoc struct {
+	Version     string                    `json:"version"`
+	Common      map[string]any            `json:"common"`
+	ServiceMeta map[string]map[string]any `json:"service_meta"`
+	Scenarios   []scenarioOut             `json:"scenarios"`
+}
+
+type scenarioOut struct {
+	Name    string         `json:"name"`
+	Title   string         `json:"title"`
+	Impact  string         `json:"impact"`
+	Affects []string       `json:"affects"`
+	Desc    string         `json:"desc"`
+	UI      scenarioUI     `json:"ui"`
+	Shared  map[string]any `json:"shared"`
+	Changes []changeOut    `json:"changes"`
+	Steps   []stepOut      `json:"steps"`
+}
+
+type changeOut struct {
+	Service    string         `json:"service"`
+	Summary    string         `json:"summary"`
+	SourceTool string         `json:"source_tool"`
+	AgoMinutes int            `json:"ago_minutes"`
+	Custom     map[string]any `json:"custom"`
+	Links      []changeLink   `json:"links"`
+}
+
+type stepOut struct {
+	DelaySec int            `json:"delay_sec"`
+	Service  string         `json:"service"`
+	Summary  string         `json:"summary"`
+	Desc     string         `json:"desc"`
+	Severity string         `json:"severity"`
+	Source   string         `json:"source"`
+	Extra    map[string]any `json:"extra"`
+}
+
+func dumpScenariosJSON() {
+	doc := scenariosDoc{
+		Version:     "1",
+		Common:      commonFields,
+		ServiceMeta: serviceMeta,
+	}
+	for _, sc := range scenarios {
+		out := scenarioOut{
+			Name:    sc.name,
+			Title:   sc.title,
+			Impact:  sc.impact,
+			Affects: sc.affects,
+			Desc:    sc.desc,
+			UI:      sc.ui,
+			Shared:  sc.shared,
+		}
+		for _, ch := range sc.changes {
+			out.Changes = append(out.Changes, changeOut{
+				Service:    ch.service,
+				Summary:    ch.summary,
+				SourceTool: ch.sourceTool,
+				AgoMinutes: ch.agoMinutes,
+				Custom:     ch.custom,
+				Links:      ch.links,
+			})
+		}
+		for _, st := range sc.steps {
+			extra := st.extra
+			if extra == nil {
+				extra = map[string]any{}
+			}
+			out.Steps = append(out.Steps, stepOut{
+				DelaySec: int(st.delay / time.Second),
+				Service:  st.service,
+				Summary:  st.summary,
+				Desc:     st.desc,
+				Severity: st.severity,
+				Source:   st.source,
+				Extra:    extra,
+			})
+		}
+		doc.Scenarios = append(doc.Scenarios, out)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(doc)
+}
+
+// ---------------------------------------------------------------------------
+
 func cmdScenarios(args []string) {
 	if len(args) < 1 {
-		die("scenarios needs a subcommand: list | run")
+		die("scenarios needs a subcommand: list | run | resolve | dump-json")
 	}
 	switch args[0] {
 	case "list":
@@ -1570,8 +1758,10 @@ func cmdScenarios(args []string) {
 		runScenariosCmd(args[1:])
 	case "resolve":
 		resolveScenariosCmd(args[1:])
+	case "dump-json":
+		dumpScenariosJSON()
 	default:
-		die("scenarios needs a subcommand: list | run | resolve")
+		die("scenarios needs a subcommand: list | run | resolve | dump-json")
 	}
 }
 
@@ -2051,373 +2241,132 @@ func die(msg string) {
 }
 
 // ---------------------------------------------------------------------------
-// web — PagerDuty-styled browser UI for browsing and triggering scenarios.
+// web — serve the embedded storefront and open it with keys pre-loaded.
 // ---------------------------------------------------------------------------
 
 func cmdWeb(args []string) {
-	fs := flag.NewFlagSet("web", flag.ExitOnError)
-	addr := fs.String("addr", ":8080", "listen address (host:port); if the port is taken, the next free one is used")
-	maxTries := fs.Int("port-tries", 20, "how many consecutive ports to try if --addr is busy")
-	env := fs.String("env", "demo", "env to use (reads ~/.greenagonia/<env>.json)")
-	_ = fs.Parse(args)
+	fset := flag.NewFlagSet("web", flag.ExitOnError)
+	env := fset.String("env", "demo", "env to use (reads ~/.greenagonia/<env>.json)")
+	siteURLFlag := fset.String("site-url", "", "override the stored site URL for this invocation")
+	noOpen := fset.Bool("no-open", false, "print the URL without opening a browser")
+	_ = fset.Parse(args)
 
-	state, stateErr := loadState(*env)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = io.WriteString(w, webHTML)
-	})
-	mux.HandleFunc("/api/state", apiStateHandler(*env, state))
-	mux.HandleFunc("/api/scenarios", apiScenariosHandler)
-	mux.HandleFunc("/api/scenarios/", apiScenarioSubpathHandler(state))
-
-	ln, chosen, err := listenWithPortFallback(*addr, *maxTries)
+	state, err := loadState(*env)
 	if err != nil {
-		die(err.Error())
+		die(fmt.Sprintf("no state file for env %q — run 'greenagonia deploy' first", *env))
 	}
+
+	base := state.SiteURL
+	if *siteURLFlag != "" {
+		base = strings.TrimRight(*siteURLFlag, "/")
+	}
+	if base == "" {
+		base = "http://localhost:8080"
+	}
+	base = strings.TrimRight(base, "/")
+
+	// Build the URL with keys pre-loaded as query params.
+	changeKey := state.ChangeKeys["payment-gateway"]
+	q := url.Values{}
+	q.Set("pdkey", state.RoutingKey)
+	if changeKey != "" {
+		q.Set("pdchangekey", changeKey)
+		q.Set("pdldkey", changeKey)
+	}
+	fullURL := base + "/?" + q.Encode()
+
 	banner()
-	url := fmt.Sprintf("http://localhost:%d", chosen)
 	region := state.regionOf()
-	fmt.Printf("  %s  %s  %s\n", pdGreen("▸ web"), bold(hyperlink(url, url)), dim(fmt.Sprintf("· env=%s · region=%s", *env, strings.ToUpper(region))))
-	if stateErr != nil {
-		fmt.Printf("  %s no state file for env %q — UI loads but trigger buttons are disabled.\n", yellow("⚠"), *env)
-	}
-	fmt.Println()
-	if err := http.Serve(ln, mux); err != nil {
-		die(err.Error())
+
+	if isLocalURL(base) {
+		// Serve the embedded storefront locally, then open the browser.
+		port := parseLocalPort(base, 8080)
+		sub, fsErr := fs.Sub(siteFS, "site")
+		if fsErr != nil {
+			die("embedded site not found — rebuild with 'make build'")
+		}
+		fmt.Printf("  %s  %s  %s\n",
+			pdGreen("▸ storefront"),
+			bold(hyperlink(fullURL, fullURL)),
+			dim(fmt.Sprintf("· env=%s · region=%s · local", *env, strings.ToUpper(region))))
+		fmt.Println()
+		if !*noOpen {
+			go func() {
+				time.Sleep(80 * time.Millisecond)
+				openBrowser(fullURL)
+			}()
+		}
+		if err := http.ListenAndServe(fmt.Sprintf(":%d", port), http.FileServer(http.FS(sub))); err != nil {
+			die(err.Error())
+		}
+	} else {
+		// External host — just open the URL; no local server needed.
+		fmt.Printf("  %s  %s  %s\n",
+			pdGreen("▸ storefront"),
+			bold(hyperlink(fullURL, fullURL)),
+			dim(fmt.Sprintf("· env=%s · region=%s", *env, strings.ToUpper(region))))
+		fmt.Println()
+		if !*noOpen {
+			openBrowser(fullURL)
+		}
 	}
 }
 
-// listenWithPortFallback binds the requested addr; if the port is in use,
-// it tries the next ones (up to maxTries) before giving up. Returns the
-// chosen port for printing.
-func listenWithPortFallback(addr string, maxTries int) (net.Listener, int, error) {
-	host, portStr, err := net.SplitHostPort(addr)
+// isLocalURL returns true for localhost / 127.0.0.1 base URLs.
+func isLocalURL(u string) bool {
+	return strings.Contains(u, "localhost") || strings.Contains(u, "127.0.0.1")
+}
+
+// parseLocalPort extracts the port number from a URL like http://localhost:8080.
+func parseLocalPort(rawURL string, def int) int {
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, 0, fmt.Errorf("invalid --addr %q: %w", addr, err)
+		return def
 	}
-	startPort, err := strconv.Atoi(portStr)
-	if err != nil {
-		return nil, 0, fmt.Errorf("invalid port in --addr %q: %w", addr, err)
-	}
-	if maxTries < 1 {
-		maxTries = 1
-	}
-	var lastErr error
-	for i := 0; i < maxTries; i++ {
-		port := startPort + i
-		ln, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
-		if err == nil {
-			if i > 0 {
-				fmt.Printf("port %d was busy — using %d instead.\n", startPort, port)
-			}
-			return ln, port, nil
-		}
-		lastErr = err
-		if !isAddrInUse(err) {
-			return nil, 0, err
+	if p := parsed.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			return n
 		}
 	}
-	return nil, 0, fmt.Errorf("no free port in [%d..%d]: %w", startPort, startPort+maxTries-1, lastErr)
+	return def
 }
 
-func isAddrInUse(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "address already in use")
-}
-
-func apiStateHandler(env string, state *envState) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		out := map[string]any{"env": env, "deployed": state != nil}
-		if state != nil {
-			out["routing_key_masked"] = maskKey(state.RoutingKey)
-			out["change_keys_count"] = len(state.ChangeKeys)
-			out["updated_at"] = state.UpdatedAt
-		}
-		_ = json.NewEncoder(w).Encode(out)
-	}
-}
-
-func maskKey(k string) string {
-	if len(k) <= 8 {
-		return strings.Repeat("•", len(k))
-	}
-	return k[:4] + "…" + k[len(k)-4:]
-}
-
-func apiScenariosHandler(w http.ResponseWriter, r *http.Request) {
-	type stepJSON struct {
-		DelaySec int    `json:"delay_sec"`
-		Service  string `json:"service"`
-		Severity string `json:"severity"`
-	}
-	type scenarioJSON struct {
-		Name        string         `json:"name"`
-		Title       string         `json:"title"`
-		Impact      string         `json:"impact"`
-		Affects     []string       `json:"affects"`
-		Desc        string           `json:"desc"`    // technical line for "details" view
-		Changes     []map[string]any `json:"changes"` // simplified: who changed what, how long ago
-		Services    []string       `json:"services"`    // technical service IDs (kebab-case)
-		ServicesFriendly map[string]string `json:"services_friendly"` // kebab → "Title Case"
-		AlertsPerService map[string]int    `json:"alerts_per_service"`
-		Steps       []stepJSON     `json:"steps"`       // minimal — for modal progress
-	}
-	out := make([]scenarioJSON, 0, len(scenarios))
-	for _, s := range scenarios {
-		title := s.title
-		if title == "" {
-			title = s.name
-		}
-		impact := s.impact
-		if impact == "" {
-			impact = s.desc
-		}
-		sj := scenarioJSON{
-			Name:    s.name,
-			Title:   title,
-			Impact:  impact,
-			Affects: s.affects,
-			Desc:    s.desc,
-		}
-		for _, c := range s.changes {
-			ch := map[string]any{
-				"service":     c.service,
-				"source_tool": c.sourceTool,
-				"ago_minutes": c.agoMinutes,
-				"summary":     c.summary,
-			}
-			if v, ok := c.custom["release_tag"].(string); ok && v != "" {
-				ch["version"] = v
-			}
-			if v, ok := c.custom["author"].(string); ok && v != "" {
-				ch["author"] = v
-			} else if v, ok := c.custom["changed_by"].(string); ok && v != "" {
-				ch["author"] = v
-			}
-			if v, ok := c.custom["pr_number"]; ok {
-				ch["pr_number"] = v
-			}
-			if v, ok := c.custom["pr_title"].(string); ok && v != "" {
-				ch["pr_title"] = v
-			}
-			if v, ok := c.custom["flag_key"].(string); ok && v != "" {
-				ch["flag_key"] = v
-			}
-			sj.Changes = append(sj.Changes, ch)
-		}
-		seen := map[string]bool{}
-		perSvc := map[string]int{}
-		friendly := map[string]string{}
-		for _, st := range s.steps {
-			perSvc[st.service]++
-			if !seen[st.service] {
-				seen[st.service] = true
-				sj.Services = append(sj.Services, st.service)
-				friendly[st.service] = titleCaseKebab(st.service)
-			}
-			sj.Steps = append(sj.Steps, stepJSON{
-				DelaySec: int(st.delay / time.Second),
-				Service:  st.service,
-				Severity: st.severity,
-			})
-		}
-		sj.AlertsPerService = perSvc
-		sj.ServicesFriendly = friendly
-		out = append(out, sj)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
-}
-
-func titleCaseKebab(s string) string {
-	parts := strings.Split(s, "-")
-	for i, p := range parts {
-		if p == "" {
-			continue
-		}
-		// keep common acronyms upper-cased
-		switch strings.ToLower(p) {
-		case "api", "db", "ui", "id":
-			parts[i] = strings.ToUpper(p)
-		default:
-			parts[i] = strings.ToUpper(p[:1]) + p[1:]
-		}
-	}
-	return strings.Join(parts, " ")
-}
-
-// /api/scenarios/<name>/run     — SSE stream that fires the scenario
-// /api/scenarios/<name>/resolve  — SSE stream that closes its incidents
-func apiScenarioSubpathHandler(state *envState) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		rest := strings.TrimPrefix(r.URL.Path, "/api/scenarios/")
-		parts := strings.SplitN(rest, "/", 2)
-		if len(parts) != 2 {
-			http.NotFound(w, r)
-			return
-		}
-		name, action := parts[0], parts[1]
-		sc := findScenario(name)
-		if sc == nil {
-			http.Error(w, "unknown scenario", http.StatusNotFound)
-			return
-		}
-		if state == nil {
-			http.Error(w, "no state file — deploy first", http.StatusPreconditionFailed)
-			return
-		}
-		switch action {
-		case "run":
-			streamScenarioRun(w, r, *sc, state)
-		case "resolve":
-			streamScenarioResolve(w, r, *sc, state)
-		default:
-			http.NotFound(w, r)
-		}
-	}
-}
-
-func streamScenarioResolve(w http.ResponseWriter, r *http.Request, sc scenario, state *envState) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+// openBrowser opens u in the default browser on macOS and Linux.
+func openBrowser(u string) {
+	var cmd string
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = "open"
+	case "linux":
+		cmd = "xdg-open"
+	default:
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-
-	send := func(event string, payload any) {
-		b, err := json.Marshal(payload)
-		if err != nil {
-			b = []byte(`{}`)
-		}
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
-		flusher.Flush()
-	}
-
-	send("info", map[string]any{"message": fmt.Sprintf("resolving %s (%d step(s))", sc.name, len(sc.steps))})
-
-	resolved, failed := 0, 0
-	for i, st := range sc.steps {
-		select {
-		case <-r.Context().Done():
-			return
-		default:
-		}
-		dk := dedupKey(state.Env, sc.name, st.service, i)
-		if err := sendResolve(state.regionOf(), state.RoutingKey, dk, st.service); err != nil {
-			failed++
-			send("err", map[string]any{"message": fmt.Sprintf("%s/%d: %v", st.service, i, err)})
-			continue
-		}
-		resolved++
-		send("resolved", map[string]any{
-			"service": st.service,
-			"source":  st.source,
-			"summary": st.summary,
-			"step":    i,
-		})
-	}
-	send("done", map[string]any{"resolved": resolved, "failed": failed})
+	_ = exec.Command(cmd, u).Start()
 }
 
-func streamScenarioRun(w http.ResponseWriter, r *http.Request, sc scenario, state *envState) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
+// ---------------------------------------------------------------------------
+// site-url — persist the storefront base URL in the state file.
+// ---------------------------------------------------------------------------
 
-	send := func(event string, payload any) {
-		b, err := json.Marshal(payload)
-		if err != nil {
-			b = []byte(`{}`)
-		}
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
-		flusher.Flush()
-	}
+func cmdSiteURL(args []string) {
+	fset := flag.NewFlagSet("site-url", flag.ExitOnError)
+	env := fset.String("env", "demo", "env to update")
+	_ = fset.Parse(args)
 
-	send("info", map[string]any{"message": fmt.Sprintf("starting %s (%d alert step(s))", sc.name, len(sc.steps))})
-
-	// 1. Recent changes (backdated; see sendChange).
-	sentAnyChange := false
-	for _, ch := range sc.changes {
-		key := state.ChangeKeys[ch.service]
-		if key == "" {
-			send("err", map[string]any{"message": fmt.Sprintf("no change-event key for service %s", ch.service)})
-			continue
-		}
-		if err := sendChange(state.regionOf(), key, ch); err != nil {
-			send("err", map[string]any{"message": fmt.Sprintf("change event: %v", err)})
-			continue
-		}
-		sentAnyChange = true
-		send("change", map[string]any{
-			"service":     ch.service,
-			"summary":     ch.summary,
-			"source_tool": ch.sourceTool,
-			"ago_minutes": ch.agoMinutes,
-		})
+	if fset.NArg() < 1 {
+		die("usage: greenagonia site-url <url> [--env <name>]\n  example: greenagonia site-url http://3.85.144.140")
 	}
-	if sentAnyChange {
-		select {
-		case <-time.After(3 * time.Second):
-		case <-r.Context().Done():
-			return
-		}
-	}
+	u := strings.TrimRight(fset.Arg(0), "/")
 
-	// 2. Alert cascade.
-	start := time.Now()
-	hosts := primaryHosts(sc)
-	for i, st := range sc.steps {
-		if d := st.delay - time.Since(start); d > 0 {
-			select {
-			case <-time.After(d):
-			case <-r.Context().Done():
-				return
-			}
-		}
-		ev := pdEvent{
-			RoutingKey:  state.RoutingKey,
-			EventAction: "trigger",
-			DedupKey:    dedupKey(state.Env, sc.name, st.service, i),
-			Payload: payload{
-				Summary:       st.summary,
-				Source:        hosts[st.service],
-				Severity:      st.severity,
-				Component:     st.service,
-				Group:         sc.name,
-				Class:         "greenagonia-scenario",
-				CustomDetails: mergeDetails(st.service, sc.name, hosts[st.service], st.source, st.desc, sc.shared, st.extra),
-			},
-		}
-		if err := sendAlert(state.regionOf(), ev); err != nil {
-			send("err", map[string]any{"message": fmt.Sprintf("alert %s: %v", st.service, err)})
-			continue
-		}
-		send("step", map[string]any{
-			"elapsed_sec": int(time.Since(start) / time.Second),
-			"service":     st.service,
-			"severity":    st.severity,
-			"summary":     st.summary,
-			"source":      st.source,
-		})
+	state, err := loadState(*env)
+	if err != nil {
+		die(fmt.Sprintf("no state file for env %q — run 'greenagonia deploy' first", *env))
 	}
-
-	send("done", map[string]any{"elapsed_sec": int(time.Since(start) / time.Second)})
+	state.SiteURL = u
+	if _, err := saveState(*state); err != nil {
+		die(fmt.Sprintf("saving state: %v", err))
+	}
+	fmt.Printf("  %s site-url for env=%s → %s\n", green("✓"), *env, u)
+	fmt.Printf("  %s run: greenagonia web --env %s\n", dim("›"), *env)
 }

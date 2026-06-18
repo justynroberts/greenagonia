@@ -1,6 +1,9 @@
 # build output
 bin/
 
+# shared-site files copied here at build time (source of truth: ../shared-usage/shared-site)
+cli/site/
+
 # terraform
 terraform/.terraform/
 terraform/.terraform.lock.hcl

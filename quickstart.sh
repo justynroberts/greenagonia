@@ -77,7 +77,7 @@ if [[ -n "${PAGERDUTY_TOKEN:-}" && -n "${GREENAGONIA_EMAIL:-}" ]]; then
     --email "$GREENAGONIA_EMAIL" \
     ${GREENAGONIA_REGION:+--region "$GREENAGONIA_REGION"}
   echo
-  say "now try:  ./bin/greenagonia web --env ${GREENAGONIA_ENV:-prod}"
+  say "storefront: ./bin/greenagonia web --env ${GREENAGONIA_ENV:-prod}"
 else
   printf "  ${BOLD}next steps${NC}\n\n"
   printf "    ${DIM}# 1. PagerDuty admin API key (Integrations -> API Access Keys)${NC}\n"
@@ -85,8 +85,10 @@ else
   printf "    ${DIM}# 2. deploy (creates users/services/orchestration in PagerDuty)${NC}\n"
   printf "    ./bin/greenagonia deploy --env prod --email you@example.com\n"
   printf "    ${DIM}#    EU account? add: --region eu${NC}\n\n"
-  printf "    ${DIM}# 3. open the trigger site${NC}\n"
+  printf "    ${DIM}# 3. open the storefront (serves the Greenagonia e-commerce site locally)${NC}\n"
   printf "    ./bin/greenagonia web --env prod\n\n"
+  printf "    ${DIM}# hosted elsewhere? set the base URL first:${NC}\n"
+  printf "    ${DIM}# ./bin/greenagonia site-url http://your-host --env prod${NC}\n\n"
   printf "    ${DIM}full walkthrough: ./bin/greenagonia setup${NC}\n"
 fi
 echo
