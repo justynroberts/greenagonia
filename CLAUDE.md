@@ -37,18 +37,18 @@ regenerated on every build.
 
 | Mode | Who | How |
 |---|---|---|
-| Single-user | One person, own PD account | `./quickstart.sh` → `./bin/greenagonia deploy` → `./bin/greenagonia web` |
+| Single-user | One person, own PD account | `./quickstart.sh` → `./greenagonia deploy` → `./greenagonia web` |
 | Shared/hosted | Many people, one shared PD account per admin | Deploy `terraform-shared/`; host `site/` on any static server; give each user `?pdkey=<routing_key>` URL |
 
 ## Key commands
 
 ```bash
 make build                          # generate scenarios.json, embed site, compile CLI
-./bin/greenagonia deploy --env demo # provision PagerDuty via Terraform
-./bin/greenagonia web --env demo    # serve storefront locally, open browser with keys
-./bin/greenagonia scenarios list    # list available scenarios
-./bin/greenagonia scenarios run --env demo --scenario bad-payment-deploy
-./bin/greenagonia scenarios resolve --env demo
+./greenagonia deploy --env demo # provision PagerDuty via Terraform
+./greenagonia web --env demo    # serve storefront locally, open browser with keys
+./greenagonia scenarios list    # list available scenarios
+./greenagonia scenarios run --env demo --scenario bad-payment-deploy
+./greenagonia scenarios resolve --env demo
 ```
 
 ## Contract: site ↔ CLI

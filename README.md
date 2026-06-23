@@ -97,11 +97,11 @@ greenagonia/
 ## Build (manual — quickstart.sh does this for you)
 
 ```bash
-make build           # sync site files + native binary → ./bin/greenagonia
+make build           # sync site files + native binary → ./greenagonia
 make build-all       # sync site files + cross-compile for macOS / Linux / Windows
 ```
 
-`make build` copies `../shared-usage/shared-site/` into `cli/site/` first (gitignored),
+`make build` generates `site/scenarios.json`, copies `site/` into `cli/site/` (gitignored),
 then compiles the Go binary with that directory embedded. The binary is fully
 self-contained — no external site files needed at runtime.
 
@@ -112,7 +112,7 @@ and opens it in your browser with the routing key and change-event keys
 pre-loaded:
 
 ```bash
-./bin/greenagonia web --env demo
+./greenagonia web --env demo
 # → serves http://localhost:8080, opens browser with ?pdkey=... pre-set
 ```
 
@@ -120,8 +120,8 @@ If the storefront is hosted externally (GitHub Pages, EC2, etc.), set the
 base URL once and `web` opens it directly — no local server started:
 
 ```bash
-./bin/greenagonia site-url http://3.85.144.140 --env demo
-./bin/greenagonia web --env demo   # opens external URL, prints the link
+./greenagonia site-url http://3.85.144.140 --env demo
+./greenagonia web --env demo   # opens external URL, prints the link
 ```
 
 The `--no-open` flag prints the URL without launching a browser. The `--site-url`
@@ -131,13 +131,13 @@ flag overrides the stored URL for a single invocation.
 
 ```bash
 export PAGERDUTY_TOKEN=...
-./bin/greenagonia deploy --env demo --email me@example.com
+./greenagonia deploy --env demo --email me@example.com
 ```
 
 For EU PagerDuty accounts (subdomain at `*.eu.pagerduty.com`):
 
 ```bash
-./bin/greenagonia deploy --env demo --region eu --email me@example.com
+./greenagonia deploy --env demo --region eu --email me@example.com
 ```
 
 The region is recorded in `~/.greenagonia/<env>.json` so subsequent
@@ -158,8 +158,8 @@ This will:
 `scenarios run` reads `~/.greenagonia/<env>.json`, so no key flags needed:
 
 ```bash
-./bin/greenagonia scenarios list
-./bin/greenagonia scenarios run --env demo --scenario bad-payment-deploy
+./greenagonia scenarios list
+./greenagonia scenarios run --env demo --scenario bad-payment-deploy
 ```
 
 Add `--repeat N` to fire a scenario several times back-to-back; add
@@ -170,7 +170,7 @@ in that mode because they need per-service integration keys.
 ## Undeploy
 
 ```bash
-./bin/greenagonia undeploy --env demo
+./greenagonia undeploy --env demo
 ```
 
 Removes the PagerDuty resources AND the local state file at

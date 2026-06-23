@@ -49,7 +49,7 @@ covering nights/weekends; secondary and tertiary are weekly persona
 rotations, staggered so different personas are up on each.
 
 **Routing — one scenario, from the storefront:** this environment is driven
-exclusively by the shared storefront (`../shared-usage/shared-site`), which
+exclusively by the shared storefront (`../site`), which
 fires exactly one scenario: `bad-payment-deploy` / "Card processor timeouts"
 with `custom_details.service = "payment-gateway"`. Each admin's router
 matches the plain service name and routes to their prefixed service
@@ -63,23 +63,23 @@ those.)
 
 ```bash
 # First-time setup
-./setup.sh setup                                 # wizard: token, settings, first admin
-./setup.sh deploy                                # plan → confirm → apply; prints per-admin links
+greenagonia shared setup                                 # wizard: token, settings, first admin
+greenagonia shared deploy                                # plan → confirm → apply; prints per-admin links
 
 # Day-to-day
-./setup.sh urls                                  # per-admin storefront links with keys
-./setup.sh urls JR                               # just one admin
+greenagonia shared urls                                  # per-admin storefront links with keys
+greenagonia shared urls JR                               # just one admin
 
 # Admins
-./setup.sh admin add AB "Alice Bell" alice@example.com
-./setup.sh admin remove AB
-./setup.sh deploy                                # plan touches only AB's resources
+greenagonia shared admin add AB "Alice Bell" alice@example.com
+greenagonia shared admin remove AB
+greenagonia shared deploy                                # plan touches only AB's resources
 
 # Secrets and settings (each writes to gitignored files, then deploy to apply)
-./setup.sh token                                 # replace PagerDuty REST API token
-./setup.sh user-token                            # set PagerDuty user-level token (needed for Slack connections)
-./setup.sh slack-token                           # set Slack bot token
-./setup.sh site-url http://3.85.144.140          # set storefront base URL
+greenagonia shared token                                 # replace PagerDuty REST API token
+greenagonia shared user-token                            # set PagerDuty user-level token (needed for Slack connections)
+greenagonia shared slack-token                           # set Slack bot token
+greenagonia shared site-url http://3.85.144.140          # set storefront base URL
 ```
 
 The CLI stores everything as Terraform auto-loaded var files (both gitignored):
@@ -151,7 +151,7 @@ With `enable_slack = true` (the setup wizard asks), Terraform creates:
   Greenagonia team) that routes triggered/acknowledged/resolved/escalated
   events into the matching channel.
 
-Required variables (set via `./setup.sh slack-token` / `./setup.sh user-token`):
+Required variables (set via `greenagonia shared slack-token` / `greenagonia shared user-token`):
 
 | Variable | Where to get it |
 |---|---|
@@ -181,7 +181,7 @@ they're independent resources. The per-admin "Open Incident Channel" Incident Wo
 
 ## Initials collisions
 
-`./setup.sh admin add JR "J Roberts" …` when `JR` is taken derives the next
+`greenagonia shared admin add JR "J Roberts" …` when `JR` is taken derives the next
 free initials from the name automatically: `JR → JRO → JROB → JOR …` (2-4
 uppercase letters). Re-adding the same email under the same initials is an
 update, not a collision.
@@ -204,7 +204,7 @@ ops console shows two extra fields: "Change event key — GitHub deploys" and
 http://<site>/?pdkey=<routing>&pdchangekey=<github-key>&pdldkey=<ld-key>
 ```
 
-`./setup.sh urls` shows all three keys per admin. If a change key is unset the event
+`greenagonia shared urls` shows all three keys per admin. If a change key is unset the event
 is silently skipped — the incident still fires.
 
 ## Notes & gotchas
