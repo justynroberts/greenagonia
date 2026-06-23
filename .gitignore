@@ -1,10 +1,10 @@
 # build output
 bin/
 
-# shared-site files copied here at build time (source of truth: ../shared-usage/shared-site)
+# site files copied here at build time (source of truth: site/)
 cli/site/
 
-# terraform
+# single-user terraform
 terraform/.terraform/
 terraform/.terraform.lock.hcl
 terraform/terraform.tfstate
@@ -13,6 +13,18 @@ terraform/terraform.tfstate.d/
 terraform/terraform.tfvars
 terraform/crash.log
 terraform/*.plan
+
+# shared terraform — state and secrets, never commit
+terraform-shared/.terraform/
+terraform-shared/.terraform.lock.hcl
+terraform-shared/terraform.tfstate
+terraform-shared/terraform.tfstate.*
+terraform-shared/terraform.tfstate.d/
+terraform-shared/crash.log
+terraform-shared/*.plan
+terraform-shared/*.tfvars
+terraform-shared/*.auto.tfvars.json
+terraform-shared/slack-secrets.json
 
 # local env
 .env

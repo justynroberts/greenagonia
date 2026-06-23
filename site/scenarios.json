@@ -1,0 +1,1524 @@
+{
+  "version": "1",
+  "common": {
+    "cluster": "use1-prod-1",
+    "datacenter": "aws-use1",
+    "environment": "production",
+    "kubernetes": true,
+    "monitoring_system": "datadog",
+    "region": "us-east-1",
+    "runbook_url": {
+      "github": "https://raw.githubusercontent.com/greenagonia/runbooks/refs/heads/main/runbook.md"
+    }
+  },
+  "service_meta": {
+    "checkout-api": {
+      "deployment": "checkout-api",
+      "namespace": "commerce",
+      "runbook": "https://wiki.greenagonia.io/runbooks/checkout-api",
+      "team": "checkout"
+    },
+    "notification-service": {
+      "deployment": "notification-service",
+      "namespace": "platform",
+      "runbook": "https://wiki.greenagonia.io/runbooks/notification-service",
+      "team": "platform-notifications"
+    },
+    "order-service": {
+      "deployment": "order-service",
+      "namespace": "commerce",
+      "runbook": "https://wiki.greenagonia.io/runbooks/order-service",
+      "team": "orders"
+    },
+    "payment-gateway": {
+      "deployment": "payment-gateway",
+      "namespace": "payments",
+      "runbook": "https://wiki.greenagonia.io/runbooks/payment-gateway",
+      "team": "platform-payments"
+    },
+    "product-catalog": {
+      "deployment": "product-catalog",
+      "namespace": "catalog",
+      "runbook": "https://wiki.greenagonia.io/runbooks/product-catalog",
+      "team": "catalog"
+    },
+    "recommendation-engine": {
+      "deployment": "recommendation-engine",
+      "namespace": "recommendations",
+      "runbook": "https://wiki.greenagonia.io/runbooks/recommendation-engine",
+      "team": "data-platform"
+    },
+    "search-service": {
+      "deployment": "search-service",
+      "namespace": "search",
+      "runbook": "https://wiki.greenagonia.io/runbooks/search-service",
+      "team": "search"
+    },
+    "user-auth": {
+      "deployment": "user-auth",
+      "namespace": "identity",
+      "runbook": "https://wiki.greenagonia.io/runbooks/user-auth",
+      "team": "identity"
+    }
+  },
+  "scenarios": [
+    {
+      "name": "bad-payment-deploy",
+      "title": "Payment Outage",
+      "impact": "Customers can't complete payment at checkout. Orders are failing and confirmation emails are backing up.",
+      "affects": [
+        "Customer Checkout",
+        "Order Processing"
+      ],
+      "desc": "payment-gateway v2.4.1 cascade — payment, checkout, orders, notifications.",
+      "ui": {
+        "fail_step": "payment",
+        "slow_factor": 4,
+        "error_code": "GATEWAY_TIMEOUT_504",
+        "component": "payment-gateway",
+        "user_message": "Our payment provider is taking too long to respond. You have not been charged."
+      },
+      "shared": {
+        "deploy_id": "github-deploy-412",
+        "release": "v2.4.1",
+        "root_cause_service": "payment-gateway"
+      },
+      "changes": [
+        {
+          "service": "payment-gateway",
+          "summary": "Deployed payment-gateway v2.4.1 → production (PR #412: Refactor Amex card auth flow)",
+          "source_tool": "GitHub Actions",
+          "ago_minutes": 22,
+          "custom": {
+            "author": "alice@greenagonia.io",
+            "branch": "main",
+            "commit_sha": "a3f9c12ee45b8a2c1d9f8b3c7e5a9d1f2b6c4e8a",
+            "commit_short": "a3f9c12",
+            "deploy_status": "success",
+            "deployed_to": "production",
+            "files_changed": 14,
+            "lines_added": 287,
+            "lines_removed": 41,
+            "pr_number": 412,
+            "pr_title": "Refactor Amex card auth flow",
+            "release_tag": "v2.4.1",
+            "repository": "greenagonia/payment-gateway",
+            "reviewers": [
+              "bob",
+              "carol"
+            ],
+            "service": "payment-gateway",
+            "trigger": "merge_to_main",
+            "workflow": "deploy.yml"
+          },
+          "links": [
+            {
+              "href": "https://github.com/greenagonia/payment-gateway/pull/412",
+              "text": "PR #412"
+            },
+            {
+              "href": "https://github.com/greenagonia/payment-gateway/commit/a3f9c12",
+              "text": "Commit a3f9c12"
+            },
+            {
+              "href": "https://github.com/greenagonia/payment-gateway/actions/workflows/deploy.yml",
+              "text": "CI deploy workflow"
+            }
+          ]
+        },
+        {
+          "service": "payment-gateway",
+          "summary": "Feature flag amex-new-auth-flow ramped (25% rollout → 100% rollout)",
+          "source_tool": "LaunchDarkly",
+          "ago_minutes": 9,
+          "custom": {
+            "changed_by": "alice@greenagonia.io",
+            "environment": "production",
+            "flag_key": "amex-new-auth-flow",
+            "flag_kind": "release",
+            "new_value": "100% rollout",
+            "previous_value": "25% rollout",
+            "service": "payment-gateway",
+            "source": "launchdarkly",
+            "targeting": "all card-brand=amex traffic"
+          },
+          "links": [
+            {
+              "href": "https://app.launchdarkly.com/projects/greenagonia/flags/amex-new-auth-flow",
+              "text": "Flag: amex-new-auth-flow"
+            },
+            {
+              "href": "https://app.launchdarkly.com/projects/greenagonia/audit",
+              "text": "LaunchDarkly audit log"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "delay_sec": 0,
+          "service": "payment-gateway",
+          "summary": "Authentication failures elevated",
+          "desc": "Card authorization requests failing for the majority of Amex transactions since the v2.4.1 deploy.",
+          "severity": "critical",
+          "source": "payment-gw-prod-3",
+          "extra": {
+            "card_brand": "amex",
+            "error_class": "java.lang.NullPointerException",
+            "release": "v2.4.1"
+          }
+        },
+        {
+          "delay_sec": 5,
+          "service": "payment-gateway",
+          "summary": "Card processor timeouts",
+          "desc": "Calls to the Adyen processor exceeding the 10s timeout; retries are compounding the load.",
+          "severity": "critical",
+          "source": "payment-gw-prod-7",
+          "extra": {
+            "processor": "adyen",
+            "timeout_count": 184
+          }
+        },
+        {
+          "delay_sec": 10,
+          "service": "payment-gateway",
+          "summary": "Service health check failing",
+          "desc": "The /healthz endpoint has failed 12 consecutive probes; instances are being pulled from the load balancer.",
+          "severity": "critical",
+          "source": "payment-gw-prod-3",
+          "extra": {
+            "consecutive_failures": 12,
+            "endpoint": "/healthz"
+          }
+        },
+        {
+          "delay_sec": 14,
+          "service": "payment-gateway",
+          "summary": "Error budget burn-rate exceeded",
+          "desc": "Availability SLO burning 14x faster than sustainable; budget exhausted in under 2 hours at this rate.",
+          "severity": "error",
+          "source": "slo-monitor",
+          "extra": {
+            "burn_rate_x": 14,
+            "slo": "payment-gateway-availability"
+          }
+        },
+        {
+          "delay_sec": 20,
+          "service": "checkout-api",
+          "summary": "Upstream payment timeouts",
+          "desc": "Requests to payment-gateway timing out at p99 of 9.8s; checkout requests queuing behind them.",
+          "severity": "error",
+          "source": "checkout-prod-7",
+          "extra": {
+            "timeout_p99_ms": 9800,
+            "upstream": "payment-gateway"
+          }
+        },
+        {
+          "delay_sec": 25,
+          "service": "checkout-api",
+          "summary": "Checkout completion rate dropped",
+          "desc": "Completed checkouts down from ~280/min to 12/min; customers abandoning after payment errors.",
+          "severity": "error",
+          "source": "checkout-prod-7",
+          "extra": {
+            "baseline_per_min": 280,
+            "complete_per_min": 12
+          }
+        },
+        {
+          "delay_sec": 30,
+          "service": "checkout-api",
+          "summary": "Cart abandonment elevated",
+          "desc": "Real-user monitoring shows 64% of carts abandoned at the payment step.",
+          "severity": "warning",
+          "source": "rum-monitor",
+          "extra": {
+            "abandonment_pct": 64
+          }
+        },
+        {
+          "delay_sec": 36,
+          "service": "order-service",
+          "summary": "Failed-order rate above baseline",
+          "desc": "Orders failing at 412/min against a 34/min baseline; failures correlate with payment declines.",
+          "severity": "error",
+          "source": "order-prod-2",
+          "extra": {
+            "baseline_per_min": 34,
+            "failed_per_min": 412
+          }
+        },
+        {
+          "delay_sec": 41,
+          "service": "order-service",
+          "summary": "Order processing degraded",
+          "desc": "Order pipeline p99 at 8.2s; payment-confirmation steps dominating processing time.",
+          "severity": "error",
+          "source": "order-prod-2",
+          "extra": {
+            "p99_ms": 8200
+          }
+        },
+        {
+          "delay_sec": 46,
+          "service": "order-service",
+          "summary": "Downstream payment errors propagating",
+          "desc": "79% of order failures trace to upstream payment-gateway errors.",
+          "severity": "error",
+          "source": "order-prod-5",
+          "extra": {
+            "upstream_error_pct": 79
+          }
+        },
+        {
+          "delay_sec": 52,
+          "service": "notification-service",
+          "summary": "Confirmation email queue backlog growing",
+          "desc": "order_confirmations queue depth at 18,450 and climbing; emails delayed until orders clear.",
+          "severity": "warning",
+          "source": "notif-prod-1",
+          "extra": {
+            "queue": "order_confirmations",
+            "queue_depth": 18450
+          }
+        },
+        {
+          "delay_sec": 58,
+          "service": "notification-service",
+          "summary": "Notification delivery delayed",
+          "desc": "Delivery delayed by more than 60s; current lag is 4 minutes behind real time.",
+          "severity": "warning",
+          "source": "notif-prod-3",
+          "extra": {
+            "delivery_lag_sec": 240
+          }
+        }
+      ]
+    },
+    {
+      "name": "db-migration-fail",
+      "title": "Login Failure",
+      "impact": "Customers can't log in. Product browsing and search are degraded across the site.",
+      "affects": [
+        "Customer Login",
+        "Browse \u0026 Discover"
+      ],
+      "desc": "Long-running schema migration locks user_session — auth, catalog, search, recs degrade.",
+      "ui": {
+        "fail_step": "validate",
+        "slow_factor": 3,
+        "error_code": "AUTH_SERVICE_UNAVAILABLE",
+        "component": "user-auth",
+        "user_message": "We couldn't verify your account details. Please try again in a moment."
+      },
+      "shared": {
+        "deploy_id": "github-deploy-1207",
+        "migration_id": "0427_session_uuid",
+        "root_cause_service": "user-auth"
+      },
+      "changes": [
+        {
+          "service": "user-auth",
+          "summary": "Deployed user-auth v4.11.0 → production (PR #1207: Migrate user_session.id from BIGINT to UUID)",
+          "source_tool": "GitHub Actions",
+          "ago_minutes": 12,
+          "custom": {
+            "actual_runtime_sec": "\u003e300 (still running)",
+            "author": "bob@greenagonia.io",
+            "branch": "main",
+            "commit_sha": "7b2e9d34c8a1f6b5e3d2c7a9b8f1e6d4c3b2a1f0",
+            "commit_short": "7b2e9d3",
+            "deploy_status": "success",
+            "deployed_to": "production",
+            "estimated_runtime_sec": 45,
+            "migration_id": "0427_session_uuid",
+            "pr_number": 1207,
+            "pr_title": "Migrate user_session.id from BIGINT to UUID",
+            "release_tag": "v4.11.0",
+            "repository": "greenagonia/user-auth",
+            "service": "user-auth",
+            "trigger": "merge_to_main",
+            "workflow": "deploy.yml"
+          },
+          "links": [
+            {
+              "href": "https://github.com/greenagonia/user-auth/pull/1207",
+              "text": "PR #1207"
+            },
+            {
+              "href": "https://github.com/greenagonia/user-auth/commit/7b2e9d3",
+              "text": "Commit 7b2e9d3"
+            },
+            {
+              "href": "https://github.com/greenagonia/user-auth/actions/workflows/deploy.yml",
+              "text": "CI deploy workflow"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "delay_sec": 0,
+          "service": "user-auth",
+          "summary": "Login latency elevated",
+          "desc": "Login p99 at 14s against a 320ms baseline; the user_session table is locked by a running migration.",
+          "severity": "critical",
+          "source": "auth-prod-4",
+          "extra": {
+            "baseline_p99_ms": 320,
+            "p99_ms": 14000
+          }
+        },
+        {
+          "delay_sec": 5,
+          "service": "user-auth",
+          "summary": "Connection pool saturated",
+          "desc": "All 200 database connections in use; new login attempts queuing until connections free up.",
+          "severity": "critical",
+          "source": "auth-prod-4",
+          "extra": {
+            "pool_in_use": 200,
+            "pool_size": 200
+          }
+        },
+        {
+          "delay_sec": 10,
+          "service": "user-auth",
+          "summary": "Session creation failing",
+          "desc": "INSERTs into user_session blocked by migration 0427_session_uuid holding a table lock.",
+          "severity": "critical",
+          "source": "auth-prod-1",
+          "extra": {
+            "db_lock_table": "user_session",
+            "migration_id": "0427_session_uuid"
+          }
+        },
+        {
+          "delay_sec": 14,
+          "service": "user-auth",
+          "summary": "Auth health check timing out",
+          "desc": "The /healthz probe exceeding its 30s timeout because the readiness query is stuck behind the lock.",
+          "severity": "error",
+          "source": "auth-prod-1",
+          "extra": {
+            "endpoint": "/healthz",
+            "timeout_ms": 30000
+          }
+        },
+        {
+          "delay_sec": 20,
+          "service": "product-catalog",
+          "summary": "Database read timeouts elevated",
+          "desc": "38% of catalog reads timing out; shared database under contention from the auth migration.",
+          "severity": "error",
+          "source": "catalog-prod-9",
+          "extra": {
+            "read_timeout_pct": 38
+          }
+        },
+        {
+          "delay_sec": 26,
+          "service": "product-catalog",
+          "summary": "Cache miss rate elevated",
+          "desc": "Cache misses at 71%; refresh queries failing so stale entries are being evicted without replacement.",
+          "severity": "error",
+          "source": "catalog-prod-5",
+          "extra": {
+            "miss_pct": 71
+          }
+        },
+        {
+          "delay_sec": 32,
+          "service": "product-catalog",
+          "summary": "Catalog query failures",
+          "desc": "28% of product queries returning errors after exhausting database retries.",
+          "severity": "error",
+          "source": "catalog-prod-9",
+          "extra": {
+            "query_error_pct": 28
+          }
+        },
+        {
+          "delay_sec": 38,
+          "service": "search-service",
+          "summary": "Empty result rate elevated",
+          "desc": "22% of searches returning zero results because the catalog backend is unavailable.",
+          "severity": "error",
+          "source": "search-prod-2",
+          "extra": {
+            "cause": "catalog backend unavailable",
+            "empty_result_pct": 22
+          }
+        },
+        {
+          "delay_sec": 44,
+          "service": "search-service",
+          "summary": "Index lookups failing",
+          "desc": "1,840 index lookups per minute failing on catalog enrichment calls.",
+          "severity": "error",
+          "source": "search-prod-1",
+          "extra": {
+            "failed_lookups_per_min": 1840
+          }
+        },
+        {
+          "delay_sec": 50,
+          "service": "search-service",
+          "summary": "Search latency degraded",
+          "desc": "Search p99 at 5.2s while enrichment calls wait on catalog timeouts.",
+          "severity": "warning",
+          "source": "search-prod-2",
+          "extra": {
+            "p99_ms": 5200
+          }
+        },
+        {
+          "delay_sec": 56,
+          "service": "recommendation-engine",
+          "summary": "Falling back to default recommendations",
+          "desc": "Personalised recommendations unavailable; 100% of traffic now served generic defaults.",
+          "severity": "warning",
+          "source": "recs-prod-5",
+          "extra": {
+            "fallback_active": true,
+            "fallback_pct": 100
+          }
+        },
+        {
+          "delay_sec": 62,
+          "service": "recommendation-engine",
+          "summary": "Personalization pipeline degraded",
+          "desc": "4 pipeline stages stalled waiting on user-profile reads that depend on the locked session store.",
+          "severity": "warning",
+          "source": "recs-prod-3",
+          "extra": {
+            "pipeline_stalled_steps": 4
+          }
+        }
+      ]
+    },
+    {
+      "name": "memory-leak-recs",
+      "title": "Recommendations Crashing",
+      "impact": "Product recommendations are unavailable. Search is slower and the catalog is overloaded.",
+      "affects": [
+        "Browse \u0026 Discover"
+      ],
+      "desc": "recommendation-engine v3.2 leaks heap — OOM-kill loop drives load into search \u0026 catalog.",
+      "ui": {
+        "fail_step": "inventory",
+        "slow_factor": 3,
+        "error_code": "INVENTORY_SERVICE_TIMEOUT",
+        "component": "recommendation-engine",
+        "user_message": "We couldn't load product availability right now. Please try again shortly."
+      },
+      "shared": {
+        "deploy_id": "github-deploy-89",
+        "release": "v3.2.0",
+        "root_cause_service": "recommendation-engine"
+      },
+      "changes": [
+        {
+          "service": "recommendation-engine",
+          "summary": "Deployed recommendation-engine v3.2.0 → production (PR #89: Add cohort-based ranking experiment)",
+          "source_tool": "GitHub Actions",
+          "ago_minutes": 18,
+          "custom": {
+            "author": "carol@greenagonia.io",
+            "branch": "main",
+            "commit_sha": "e1d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0",
+            "commit_short": "e1d8c7b",
+            "deploy_status": "success",
+            "deployed_to": "production",
+            "experiment_owner": "data-platform",
+            "feature_flag": "cohort_ranking_v3",
+            "pr_number": 89,
+            "pr_title": "Add cohort-based ranking experiment",
+            "release_tag": "v3.2.0",
+            "repository": "greenagonia/recommendation-engine",
+            "rollout_pct": 100,
+            "service": "recommendation-engine",
+            "trigger": "merge_to_main",
+            "workflow": "deploy.yml"
+          },
+          "links": [
+            {
+              "href": "https://github.com/greenagonia/recommendation-engine/pull/89",
+              "text": "PR #89"
+            },
+            {
+              "href": "https://github.com/greenagonia/recommendation-engine/commit/e1d8c7b",
+              "text": "Commit e1d8c7b"
+            },
+            {
+              "href": "https://github.com/greenagonia/recommendation-engine/actions/workflows/deploy.yml",
+              "text": "CI deploy workflow"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "delay_sec": 0,
+          "service": "recommendation-engine",
+          "summary": "OOMKilled containers",
+          "desc": "Containers killed at the 8GB memory limit 3 times in 5 minutes following the v3.2 deploy.",
+          "severity": "critical",
+          "source": "recs-prod-1",
+          "extra": {
+            "release": "v3.2",
+            "restart_count": 3,
+            "window_min": 5
+          }
+        },
+        {
+          "delay_sec": 5,
+          "service": "recommendation-engine",
+          "summary": "Restart loop detected",
+          "desc": "Pods restarting 8 times per minute; each instance leaks heap and dies within seconds of serving traffic.",
+          "severity": "critical",
+          "source": "recs-prod-1",
+          "extra": {
+            "restarts_per_min": 8
+          }
+        },
+        {
+          "delay_sec": 10,
+          "service": "recommendation-engine",
+          "summary": "Memory pressure critical",
+          "desc": "Heap at 7.8GB of an 8GB ceiling within 90 seconds of startup; allocation profile points at the new ranking cache.",
+          "severity": "critical",
+          "source": "recs-prod-2",
+          "extra": {
+            "heap_max_mb": 8192,
+            "heap_used_mb": 7820
+          }
+        },
+        {
+          "delay_sec": 14,
+          "service": "recommendation-engine",
+          "summary": "Health endpoint not responding",
+          "desc": "The /healthz endpoint unreachable; instances dying before the readiness window completes.",
+          "severity": "error",
+          "source": "recs-prod-2",
+          "extra": {
+            "endpoint": "/healthz"
+          }
+        },
+        {
+          "delay_sec": 20,
+          "service": "search-service",
+          "summary": "Search latency degraded",
+          "desc": "Search p99 at 4.2s (baseline 850ms); recommendation sidecar calls timing out and retrying.",
+          "severity": "error",
+          "source": "search-prod-1",
+          "extra": {
+            "p50_ms": 920,
+            "p99_ms": 4200
+          }
+        },
+        {
+          "delay_sec": 26,
+          "service": "search-service",
+          "summary": "Tail latency elevated",
+          "desc": "p999 at 12s; worst-case requests waiting through multiple recommendation retries.",
+          "severity": "error",
+          "source": "search-prod-3",
+          "extra": {
+            "p999_ms": 12000
+          }
+        },
+        {
+          "delay_sec": 32,
+          "service": "search-service",
+          "summary": "Queue depth growing",
+          "desc": "8,400 requests queued; capacity consumed by slow downstream calls.",
+          "severity": "warning",
+          "source": "search-prod-1",
+          "extra": {
+            "queue_depth": 8400
+          }
+        },
+        {
+          "delay_sec": 38,
+          "service": "product-catalog",
+          "summary": "Request rate above baseline",
+          "desc": "Traffic at 3x baseline as search falls back to direct catalog queries.",
+          "severity": "warning",
+          "source": "catalog-prod-2",
+          "extra": {
+            "baseline_rps": 1400,
+            "rps": 4200
+          }
+        },
+        {
+          "delay_sec": 44,
+          "service": "product-catalog",
+          "summary": "Cache hit ratio dropped",
+          "desc": "Hit ratio down to 41%; fallback queries have a different access pattern than the warmed cache.",
+          "severity": "warning",
+          "source": "catalog-prod-4",
+          "extra": {
+            "hit_ratio_pct": 41
+          }
+        },
+        {
+          "delay_sec": 50,
+          "service": "product-catalog",
+          "summary": "Database load elevated",
+          "desc": "Database CPU at 87% absorbing the cache misses.",
+          "severity": "warning",
+          "source": "catalog-prod-2",
+          "extra": {
+            "db_cpu_pct": 87
+          }
+        }
+      ]
+    },
+    {
+      "name": "config-push-gateway",
+      "title": "Site-Wide Authentication Failure",
+      "impact": "Site-wide impact. Customers can't log in, pay, or browse — everything is returning 401.",
+      "affects": [
+        "Customer Login",
+        "Customer Checkout",
+        "Browse \u0026 Discover"
+      ],
+      "desc": "Bad API-gateway config drops the Authorization header — every downstream 401s.",
+      "ui": {
+        "fail_step": "validate",
+        "slow_factor": 2,
+        "error_code": "AUTHENTICATION_REQUIRED",
+        "component": "user-auth",
+        "user_message": "We couldn't verify your account details. Please try again in a moment."
+      },
+      "shared": {
+        "config_version": "gateway-cfg-2026.06.09-3",
+        "deploy_id": "github-deploy-88",
+        "root_cause_service": "api-gateway"
+      },
+      "changes": [
+        {
+          "service": "user-auth",
+          "summary": "Deployed user-auth cfg-2026.06.09-3 → production (PR #88: Tighten upstream header allowlist)",
+          "source_tool": "GitHub Actions",
+          "ago_minutes": 6,
+          "custom": {
+            "author": "dave@greenagonia.io",
+            "branch": "main",
+            "change_type": "header_allowlist",
+            "commit_sha": "f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6",
+            "commit_short": "f5e4d3c",
+            "config_file": "routes/auth.yaml",
+            "deploy_status": "success",
+            "deployed_to": "production",
+            "header_removed": "Authorization",
+            "pr_number": 88,
+            "pr_title": "Tighten upstream header allowlist",
+            "release_tag": "cfg-2026.06.09-3",
+            "repository": "greenagonia/api-gateway-config",
+            "rollout_minutes": 0,
+            "service": "user-auth",
+            "trigger": "merge_to_main",
+            "workflow": "deploy.yml"
+          },
+          "links": [
+            {
+              "href": "https://github.com/greenagonia/api-gateway-config/pull/88",
+              "text": "PR #88"
+            },
+            {
+              "href": "https://github.com/greenagonia/api-gateway-config/commit/f5e4d3c",
+              "text": "Commit f5e4d3c"
+            },
+            {
+              "href": "https://github.com/greenagonia/api-gateway-config/actions/workflows/deploy.yml",
+              "text": "CI deploy workflow"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "delay_sec": 0,
+          "service": "user-auth",
+          "summary": "Authorization failures elevated",
+          "desc": "71% of requests rejected with 401 since gateway config push; the Authorization header is being stripped upstream.",
+          "severity": "critical",
+          "source": "auth-prod-1",
+          "extra": {
+            "config_version": "gateway-cfg-2026.06.09-3",
+            "rate_401_pct": 71
+          }
+        },
+        {
+          "delay_sec": 4,
+          "service": "user-auth",
+          "summary": "Session validation failing",
+          "desc": "Session validation calls arriving with no Authorization header; every validation attempt rejected.",
+          "severity": "critical",
+          "source": "auth-prod-2",
+          "extra": {
+            "cause": "missing Authorization header"
+          }
+        },
+        {
+          "delay_sec": 8,
+          "service": "user-auth",
+          "summary": "Token verification errors",
+          "desc": "Token verifier raising MissingAuthHeader for all inbound traffic routed through the gateway.",
+          "severity": "critical",
+          "source": "auth-prod-3",
+          "extra": {
+            "error_class": "MissingAuthHeader"
+          }
+        },
+        {
+          "delay_sec": 13,
+          "service": "user-auth",
+          "summary": "Auth health check failing",
+          "desc": "Authenticated health probe failing — the probe's own credentials are stripped by the gateway too.",
+          "severity": "critical",
+          "source": "auth-prod-1",
+          "extra": {
+            "endpoint": "/healthz"
+          }
+        },
+        {
+          "delay_sec": 18,
+          "service": "checkout-api",
+          "summary": "Authentication errors elevated",
+          "desc": "98% of checkout calls receiving 401 from downstream auth; no customer can reach payment.",
+          "severity": "critical",
+          "source": "checkout-prod-1",
+          "extra": {
+            "rate_401_pct": 98
+          }
+        },
+        {
+          "delay_sec": 23,
+          "service": "checkout-api",
+          "summary": "Checkout failures across the board",
+          "desc": "99% of checkout attempts failing; every authenticated step in the flow is rejected.",
+          "severity": "critical",
+          "source": "checkout-prod-1",
+          "extra": {
+            "failure_pct": 99
+          }
+        },
+        {
+          "delay_sec": 28,
+          "service": "checkout-api",
+          "summary": "Service unavailable to clients",
+          "desc": "All client traffic effectively blocked; circuit breakers opening across checkout instances.",
+          "severity": "critical",
+          "source": "checkout-prod-3",
+          "extra": {
+            "clients_affected": "all"
+          }
+        },
+        {
+          "delay_sec": 34,
+          "service": "order-service",
+          "summary": "Cannot process orders",
+          "desc": "Order processing halted; user-context lookups required for every order are failing.",
+          "severity": "critical",
+          "source": "order-prod-1",
+          "extra": {
+            "orders_blocked": true
+          }
+        },
+        {
+          "delay_sec": 39,
+          "service": "order-service",
+          "summary": "Session lookup failing",
+          "desc": "Session lookups against user-auth returning 401; orders cannot be attributed to customers.",
+          "severity": "critical",
+          "source": "order-prod-2",
+          "extra": {
+            "cause": "user-auth 401"
+          }
+        },
+        {
+          "delay_sec": 44,
+          "service": "order-service",
+          "summary": "Order intake blocked",
+          "desc": "New order intake suspended to prevent unattributed orders from queueing.",
+          "severity": "critical",
+          "source": "order-prod-1",
+          "extra": {}
+        },
+        {
+          "delay_sec": 50,
+          "service": "product-catalog",
+          "summary": "Authentication required errors",
+          "desc": "Personalised-pricing requests rejected with 401; anonymous browsing still functional.",
+          "severity": "error",
+          "source": "catalog-prod-1",
+          "extra": {}
+        },
+        {
+          "delay_sec": 56,
+          "service": "product-catalog",
+          "summary": "Personalised endpoints failing",
+          "desc": "All endpoints requiring a user context are failing; serving non-personalised fallbacks.",
+          "severity": "error",
+          "source": "catalog-prod-3",
+          "extra": {}
+        }
+      ]
+    },
+    {
+      "name": "cache-stampede-search",
+      "title": "Search Slowdown",
+      "impact": "Search is slow and product browsing is degraded. Recommendations are serving stale results.",
+      "affects": [
+        "Browse \u0026 Discover"
+      ],
+      "desc": "Bad TTL change in search-service — cache stampede overloads catalog.",
+      "ui": {
+        "fail_step": "inventory",
+        "slow_factor": 3,
+        "error_code": "CATALOG_SERVICE_TIMEOUT",
+        "component": "search-service",
+        "user_message": "We couldn't check item availability right now. Please try again shortly."
+      },
+      "shared": {
+        "deploy_id": "github-deploy-304",
+        "release": "v1.8.0",
+        "root_cause_service": "search-service"
+      },
+      "changes": [
+        {
+          "service": "search-service",
+          "summary": "Deployed search-service v1.8.0 → production (PR #304: Tighten cache TTL to improve freshness)",
+          "source_tool": "GitHub Actions",
+          "ago_minutes": 15,
+          "custom": {
+            "author": "eve@greenagonia.io",
+            "branch": "main",
+            "commit_sha": "c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5",
+            "commit_short": "c4b3a2f",
+            "deploy_status": "success",
+            "deployed_to": "production",
+            "intent": "improve search result freshness",
+            "new_ttl_sec": 5,
+            "old_ttl_sec": 60,
+            "pr_number": 304,
+            "pr_title": "Tighten cache TTL to improve freshness",
+            "release_tag": "v1.8.0",
+            "repository": "greenagonia/search-service",
+            "service": "search-service",
+            "trigger": "merge_to_main",
+            "workflow": "deploy.yml"
+          },
+          "links": [
+            {
+              "href": "https://github.com/greenagonia/search-service/pull/304",
+              "text": "PR #304"
+            },
+            {
+              "href": "https://github.com/greenagonia/search-service/commit/c4b3a2f",
+              "text": "Commit c4b3a2f"
+            },
+            {
+              "href": "https://github.com/greenagonia/search-service/actions/workflows/deploy.yml",
+              "text": "CI deploy workflow"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "delay_sec": 0,
+          "service": "search-service",
+          "summary": "Cache hit ratio dropped",
+          "desc": "Hit ratio collapsed from 94% to 12% after v1.8.0 cut cache TTL from 60s to 5s.",
+          "severity": "critical",
+          "source": "search-prod-3",
+          "extra": {
+            "change": "ttl 60s → 5s",
+            "hit_ratio_pct": 12,
+            "release": "v1.8.0"
+          }
+        },
+        {
+          "delay_sec": 5,
+          "service": "search-service",
+          "summary": "Backend QPS elevated",
+          "desc": "7,100 queries/sec hitting the catalog backend — formerly absorbed by cache.",
+          "severity": "critical",
+          "source": "search-prod-3",
+          "extra": {
+            "backend_qps": 7100
+          }
+        },
+        {
+          "delay_sec": 10,
+          "service": "search-service",
+          "summary": "Search latency degraded",
+          "desc": "Search p99 at 1.8s; nearly every query now pays the full backend round-trip.",
+          "severity": "critical",
+          "source": "search-prod-1",
+          "extra": {
+            "p99_ms": 1800
+          }
+        },
+        {
+          "delay_sec": 14,
+          "service": "search-service",
+          "summary": "Connection pool saturated",
+          "desc": "All 64 backend connections in use; queries queueing for a free connection.",
+          "severity": "error",
+          "source": "search-prod-2",
+          "extra": {
+            "pool_in_use": 64,
+            "pool_size": 64
+          }
+        },
+        {
+          "delay_sec": 20,
+          "service": "product-catalog",
+          "summary": "Read load critical",
+          "desc": "Read traffic at 5x baseline from the search cache stampede.",
+          "severity": "critical",
+          "source": "catalog-prod-4",
+          "extra": {
+            "baseline_qps": 1400,
+            "qps": 7100
+          }
+        },
+        {
+          "delay_sec": 26,
+          "service": "product-catalog",
+          "summary": "Database connections elevated",
+          "desc": "412 database connections in use; approaching the cluster ceiling.",
+          "severity": "error",
+          "source": "catalog-prod-4",
+          "extra": {
+            "db_connections_in_use": 412
+          }
+        },
+        {
+          "delay_sec": 32,
+          "service": "product-catalog",
+          "summary": "Query latency degraded",
+          "desc": "Catalog query p99 at 1.8s under the sustained read load.",
+          "severity": "error",
+          "source": "catalog-prod-2",
+          "extra": {
+            "p99_ms": 1800
+          }
+        },
+        {
+          "delay_sec": 38,
+          "service": "recommendation-engine",
+          "summary": "Upstream catalog timeouts",
+          "desc": "31% of catalog enrichment calls timing out under load.",
+          "severity": "warning",
+          "source": "recs-prod-2",
+          "extra": {
+            "timeout_pct": 31,
+            "upstream": "product-catalog"
+          }
+        },
+        {
+          "delay_sec": 44,
+          "service": "recommendation-engine",
+          "summary": "Stale recommendations served",
+          "desc": "41% of recommendation responses served from stale snapshots while fresh reads time out.",
+          "severity": "warning",
+          "source": "recs-prod-1",
+          "extra": {
+            "stale_pct": 41
+          }
+        },
+        {
+          "delay_sec": 50,
+          "service": "recommendation-engine",
+          "summary": "Personalization degraded",
+          "desc": "Live personalisation disabled; serving cached cohort defaults until catalog recovers.",
+          "severity": "warning",
+          "source": "recs-prod-3",
+          "extra": {
+            "fallback_active": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "k8s-bad-image-rollout",
+      "title": "Bad Deploy Crashed Pods",
+      "impact": "Recommendation pods are crash-looping. Browse experience is degraded.",
+      "affects": [
+        "Browse \u0026 Discover"
+      ],
+      "desc": "Bad container image rollout — recommendation-engine pods CrashLoopBackOff, downstream degrades.",
+      "ui": {
+        "fail_step": "inventory",
+        "slow_factor": 3,
+        "error_code": "RECOMMENDATION_SERVICE_UNAVAILABLE",
+        "component": "recommendation-engine",
+        "user_message": "We couldn't load your personalised selections. Please try again shortly."
+      },
+      "shared": {
+        "deploy_id": "argocd-sync-2026.06.09-04",
+        "release": "v3.3.0",
+        "replicaset": "recommendation-engine-7d4f9c",
+        "root_cause_service": "recommendation-engine"
+      },
+      "changes": [
+        {
+          "service": "recommendation-engine",
+          "summary": "Deployed recommendation-engine v3.3.0 → production (PR #94: Switch to slimmer alpine base image)",
+          "source_tool": "GitHub Actions",
+          "ago_minutes": 8,
+          "custom": {
+            "author": "frank@greenagonia.io",
+            "branch": "main",
+            "commit_sha": "b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0",
+            "commit_short": "b9a8f7e",
+            "deploy_status": "success",
+            "deployed_to": "production",
+            "deployer": "argocd",
+            "image": "ghcr.io/greenagonia/recommendation-engine:v3.3.0",
+            "image_size_mb": 187,
+            "k8s_cluster": "use1-prod-1",
+            "k8s_namespace": "recommendations",
+            "pr_number": 94,
+            "pr_title": "Switch to slimmer alpine base image",
+            "previous_image": "ghcr.io/greenagonia/recommendation-engine:v3.2.0",
+            "release_tag": "v3.3.0",
+            "repository": "greenagonia/recommendation-engine",
+            "service": "recommendation-engine",
+            "sync_revision": "argocd-sync-2026.06.09-04",
+            "trigger": "merge_to_main",
+            "workflow": "deploy.yml"
+          },
+          "links": [
+            {
+              "href": "https://github.com/greenagonia/recommendation-engine/pull/94",
+              "text": "PR #94"
+            },
+            {
+              "href": "https://github.com/greenagonia/recommendation-engine/commit/b9a8f7e",
+              "text": "Commit b9a8f7e"
+            },
+            {
+              "href": "https://github.com/greenagonia/recommendation-engine/actions/workflows/deploy.yml",
+              "text": "CI deploy workflow"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "delay_sec": 0,
+          "service": "recommendation-engine",
+          "summary": "Pod CrashLoopBackOff",
+          "desc": "Pod killed with exit code 137 (OOM) 6 times; the v3.3.0 alpine image is missing the jemalloc the service tunes for.",
+          "severity": "critical",
+          "source": "recommendation-engine-7d4f9c-x2k8m",
+          "extra": {
+            "exit_code": 137,
+            "image": "ghcr.io/greenagonia/recommendation-engine:v3.3.0",
+            "pod_phase": "CrashLoopBackOff",
+            "replicaset": "recommendation-engine-7d4f9c",
+            "restart_count": 6
+          }
+        },
+        {
+          "delay_sec": 4,
+          "service": "recommendation-engine",
+          "summary": "Pod CrashLoopBackOff",
+          "desc": "Second pod of the new ReplicaSet in CrashLoopBackOff with the same exit code 137 signature.",
+          "severity": "critical",
+          "source": "recommendation-engine-7d4f9c-p9m4n",
+          "extra": {
+            "exit_code": 137,
+            "pod_phase": "CrashLoopBackOff",
+            "replicaset": "recommendation-engine-7d4f9c",
+            "restart_count": 5
+          }
+        },
+        {
+          "delay_sec": 8,
+          "service": "recommendation-engine",
+          "summary": "Pod CrashLoopBackOff",
+          "desc": "Third pod crash-looping — the entire new ReplicaSet is failing identically; zero healthy replicas.",
+          "severity": "critical",
+          "source": "recommendation-engine-7d4f9c-q3w8j",
+          "extra": {
+            "exit_code": 137,
+            "pod_phase": "CrashLoopBackOff",
+            "replicaset": "recommendation-engine-7d4f9c",
+            "restart_count": 4
+          }
+        },
+        {
+          "delay_sec": 12,
+          "service": "recommendation-engine",
+          "summary": "Liveness probe failing",
+          "desc": "Liveness probe failed 3 consecutive times; kubelet restarting the container on a backoff timer.",
+          "severity": "error",
+          "source": "recommendation-engine-7d4f9c-x2k8m",
+          "extra": {
+            "consecutive_failures": 3,
+            "endpoint": "/healthz",
+            "probe": "liveness",
+            "replicaset": "recommendation-engine-7d4f9c"
+          }
+        },
+        {
+          "delay_sec": 16,
+          "service": "recommendation-engine",
+          "summary": "ReplicaSet rollout stalled",
+          "desc": "ReplicaSet at 0 of 3 ready replicas; rollout cannot make progress.",
+          "severity": "error",
+          "source": "kube-controller-manager",
+          "extra": {
+            "desired_replicas": 3,
+            "ready_replicas": 0,
+            "replicaset": "recommendation-engine-7d4f9c"
+          }
+        },
+        {
+          "delay_sec": 20,
+          "service": "recommendation-engine",
+          "summary": "Deployment rollout timed out",
+          "desc": "Progress deadline exceeded; ArgoCD reports the sync OutOfSync and is awaiting manual intervention.",
+          "severity": "error",
+          "source": "argocd",
+          "extra": {
+            "progress_deadline_exceeded": true,
+            "sync_status": "OutOfSync"
+          }
+        },
+        {
+          "delay_sec": 28,
+          "service": "search-service",
+          "summary": "Upstream recommendations unavailable",
+          "desc": "Circuit breaker to recommendation-engine open; no healthy upstream endpoints to route to.",
+          "severity": "error",
+          "source": "search-prod-2",
+          "extra": {
+            "circuit_breaker": "open",
+            "upstream": "recommendation-engine"
+          }
+        },
+        {
+          "delay_sec": 34,
+          "service": "search-service",
+          "summary": "Fallback responses elevated",
+          "desc": "100% of search responses using non-personalised fallback ranking.",
+          "severity": "error",
+          "source": "search-prod-2",
+          "extra": {
+            "fallback_pct": 100
+          }
+        },
+        {
+          "delay_sec": 40,
+          "service": "search-service",
+          "summary": "Latency degraded",
+          "desc": "Search p99 at 1.8s; fallback path is slower than the cached recommendation flow.",
+          "severity": "warning",
+          "source": "search-prod-3",
+          "extra": {
+            "p99_ms": 1800
+          }
+        },
+        {
+          "delay_sec": 46,
+          "service": "product-catalog",
+          "summary": "Request rate above baseline",
+          "desc": "Traffic at 2.3x baseline as fallback ranking queries the catalog directly.",
+          "severity": "warning",
+          "source": "catalog-prod-2",
+          "extra": {
+            "baseline_rps": 1400,
+            "rps": 3200
+          }
+        },
+        {
+          "delay_sec": 52,
+          "service": "product-catalog",
+          "summary": "Cache pressure elevated",
+          "desc": "Cache evicting 28 entries/min under the shifted access pattern.",
+          "severity": "warning",
+          "source": "catalog-prod-4",
+          "extra": {
+            "eviction_rate_per_min": 28
+          }
+        },
+        {
+          "delay_sec": 58,
+          "service": "product-catalog",
+          "summary": "Database load elevated",
+          "desc": "Database CPU at 71% absorbing fallback traffic.",
+          "severity": "warning",
+          "source": "catalog-prod-2",
+          "extra": {
+            "db_cpu_pct": 71
+          }
+        }
+      ]
+    },
+    {
+      "name": "noisy-neighbour",
+      "title": "Background System Noise",
+      "impact": "Low-priority alerts from across the platform — used to test that the router and grouping handle volume cleanly.",
+      "affects": [
+        "Platform-Wide"
+      ],
+      "desc": "Low-priority noise spread across every service — stress-tests the router.",
+      "ui": {
+        "fail_step": "order",
+        "slow_factor": 2,
+        "error_code": "ORDER_SERVICE_DEGRADED",
+        "component": "order-service",
+        "user_message": "Something went wrong creating your order. You have not been charged."
+      },
+      "shared": null,
+      "changes": [
+        {
+          "service": "notification-service",
+          "summary": "Deployed notification-service v5.2.1 → production (PR #451: Bump dependencies (routine weekly update))",
+          "source_tool": "GitHub Actions",
+          "ago_minutes": 24,
+          "custom": {
+            "author": "grace@greenagonia.io",
+            "automated": true,
+            "branch": "main",
+            "commit_sha": "d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3",
+            "commit_short": "d2c1b0a",
+            "deploy_status": "success",
+            "deployed_to": "production",
+            "files_changed": 2,
+            "lines_added": 18,
+            "lines_removed": 18,
+            "pr_number": 451,
+            "pr_title": "Bump dependencies (routine weekly update)",
+            "release_tag": "v5.2.1",
+            "repository": "greenagonia/notification-service",
+            "risk": "low",
+            "service": "notification-service",
+            "trigger": "merge_to_main",
+            "workflow": "deploy.yml"
+          },
+          "links": [
+            {
+              "href": "https://github.com/greenagonia/notification-service/pull/451",
+              "text": "PR #451"
+            },
+            {
+              "href": "https://github.com/greenagonia/notification-service/commit/d2c1b0a",
+              "text": "Commit d2c1b0a"
+            },
+            {
+              "href": "https://github.com/greenagonia/notification-service/actions/workflows/deploy.yml",
+              "text": "CI deploy workflow"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "delay_sec": 0,
+          "service": "checkout-api",
+          "summary": "Brief network latency blip",
+          "desc": "Inter-zone round-trip time elevated for ~30 seconds; back to baseline.",
+          "severity": "info",
+          "source": "checkout-api-prod-6",
+          "extra": {
+            "sample": true,
+            "step": 0
+          }
+        },
+        {
+          "delay_sec": 3,
+          "service": "order-service",
+          "summary": "Sporadic 5xx responses",
+          "desc": "A handful of 5xx responses in the last window; below the paging threshold.",
+          "severity": "info",
+          "source": "order-service-prod-3",
+          "extra": {
+            "sample": true,
+            "step": 1
+          }
+        },
+        {
+          "delay_sec": 6,
+          "service": "checkout-api",
+          "summary": "Brief network latency blip",
+          "desc": "Inter-zone round-trip time elevated for ~30 seconds; back to baseline.",
+          "severity": "warning",
+          "source": "checkout-api-prod-8",
+          "extra": {
+            "sample": true,
+            "step": 2
+          }
+        },
+        {
+          "delay_sec": 9,
+          "service": "checkout-api",
+          "summary": "Sporadic 5xx responses",
+          "desc": "A handful of 5xx responses in the last window; below the paging threshold.",
+          "severity": "info",
+          "source": "checkout-api-prod-6",
+          "extra": {
+            "sample": true,
+            "step": 3
+          }
+        },
+        {
+          "delay_sec": 12,
+          "service": "payment-gateway",
+          "summary": "Brief network latency blip",
+          "desc": "Inter-zone round-trip time elevated for ~30 seconds; back to baseline.",
+          "severity": "info",
+          "source": "payment-gateway-prod-8",
+          "extra": {
+            "sample": true,
+            "step": 4
+          }
+        },
+        {
+          "delay_sec": 15,
+          "service": "notification-service",
+          "summary": "Disk usage climbing",
+          "desc": "Volume crossed the 70% soft watermark; cleanup job has been scheduled.",
+          "severity": "warning",
+          "source": "notification-service-prod-3",
+          "extra": {
+            "sample": true,
+            "step": 5
+          }
+        },
+        {
+          "delay_sec": 18,
+          "service": "search-service",
+          "summary": "Sporadic 5xx responses",
+          "desc": "A handful of 5xx responses in the last window; below the paging threshold.",
+          "severity": "info",
+          "source": "search-service-prod-5",
+          "extra": {
+            "sample": true,
+            "step": 6
+          }
+        },
+        {
+          "delay_sec": 21,
+          "service": "checkout-api",
+          "summary": "Transient CPU spike",
+          "desc": "CPU briefly exceeded 80% for under a minute before recovering on its own.",
+          "severity": "info",
+          "source": "checkout-api-prod-1",
+          "extra": {
+            "sample": true,
+            "step": 7
+          }
+        },
+        {
+          "delay_sec": 24,
+          "service": "recommendation-engine",
+          "summary": "Brief network latency blip",
+          "desc": "Inter-zone round-trip time elevated for ~30 seconds; back to baseline.",
+          "severity": "warning",
+          "source": "recommendation-engine-prod-6",
+          "extra": {
+            "sample": true,
+            "step": 8
+          }
+        },
+        {
+          "delay_sec": 27,
+          "service": "product-catalog",
+          "summary": "Brief network latency blip",
+          "desc": "Inter-zone round-trip time elevated for ~30 seconds; back to baseline.",
+          "severity": "warning",
+          "source": "product-catalog-prod-8",
+          "extra": {
+            "sample": true,
+            "step": 9
+          }
+        },
+        {
+          "delay_sec": 30,
+          "service": "product-catalog",
+          "summary": "Disk usage climbing",
+          "desc": "Volume crossed the 70% soft watermark; cleanup job has been scheduled.",
+          "severity": "warning",
+          "source": "product-catalog-prod-6",
+          "extra": {
+            "sample": true,
+            "step": 10
+          }
+        },
+        {
+          "delay_sec": 33,
+          "service": "search-service",
+          "summary": "Disk usage climbing",
+          "desc": "Volume crossed the 70% soft watermark; cleanup job has been scheduled.",
+          "severity": "info",
+          "source": "search-service-prod-7",
+          "extra": {
+            "sample": true,
+            "step": 11
+          }
+        },
+        {
+          "delay_sec": 36,
+          "service": "checkout-api",
+          "summary": "Brief network latency blip",
+          "desc": "Inter-zone round-trip time elevated for ~30 seconds; back to baseline.",
+          "severity": "warning",
+          "source": "checkout-api-prod-8",
+          "extra": {
+            "sample": true,
+            "step": 12
+          }
+        },
+        {
+          "delay_sec": 39,
+          "service": "checkout-api",
+          "summary": "Disk usage climbing",
+          "desc": "Volume crossed the 70% soft watermark; cleanup job has been scheduled.",
+          "severity": "info",
+          "source": "checkout-api-prod-2",
+          "extra": {
+            "sample": true,
+            "step": 13
+          }
+        },
+        {
+          "delay_sec": 42,
+          "service": "search-service",
+          "summary": "Disk usage climbing",
+          "desc": "Volume crossed the 70% soft watermark; cleanup job has been scheduled.",
+          "severity": "warning",
+          "source": "search-service-prod-3",
+          "extra": {
+            "sample": true,
+            "step": 14
+          }
+        },
+        {
+          "delay_sec": 45,
+          "service": "payment-gateway",
+          "summary": "Transient CPU spike",
+          "desc": "CPU briefly exceeded 80% for under a minute before recovering on its own.",
+          "severity": "warning",
+          "source": "payment-gateway-prod-4",
+          "extra": {
+            "sample": true,
+            "step": 15
+          }
+        }
+      ]
+    }
+  ]
+}

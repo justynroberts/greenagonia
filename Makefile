@@ -3,7 +3,7 @@
 BIN      := bin
 PKG_DIR  := ./cli
 NAME     := greenagonia
-SITE_SRC := ../shared-usage/shared-site
+SITE_SRC := ./site
 SITE_DST := $(PKG_DIR)/site
 
 # Generate scenarios.json from Go source (single source of truth).
