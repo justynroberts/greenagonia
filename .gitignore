@@ -1,5 +1,5 @@
 # build output
-bin/
+/greenagonia
 
 # site files copied here at build time (source of truth: site/)
 cli/site/

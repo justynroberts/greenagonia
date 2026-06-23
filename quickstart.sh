@@ -8,7 +8,7 @@
 # What it does:
 #   1. Verifies prerequisites (listed below), installing terraform/go via
 #      Homebrew when missing.
-#   2. Builds the greenagonia CLI to ./bin/greenagonia.
+#   2. Builds the greenagonia CLI to ./greenagonia.
 #   3. If PAGERDUTY_TOKEN and GREENAGONIA_EMAIL are exported, deploys the
 #      PagerDuty environment immediately. Otherwise prints the exact
 #      commands to run next.
@@ -65,32 +65,32 @@ echo
 # --- build -----------------------------------------------------------------
 printf "  ${BOLD}building${NC}\n"
 mkdir -p bin
-( cd cli && go build -trimpath -ldflags "-s -w" -o ../bin/greenagonia . )
-say "built ./bin/greenagonia ($(du -h bin/greenagonia | cut -f1 | tr -d ' '))"
+( cd cli && go build -trimpath -ldflags "-s -w" -o ../greenagonia . )
+say "built ./greenagonia ($(du -h greenagonia | cut -f1 | tr -d ' '))"
 echo
 
 # --- deploy or print next steps ---------------------------------------------
 if [[ -n "${PAGERDUTY_TOKEN:-}" && -n "${GREENAGONIA_EMAIL:-}" ]]; then
   printf "  ${BOLD}deploying${NC} ${DIM}(PAGERDUTY_TOKEN + GREENAGONIA_EMAIL detected)${NC}\n\n"
-  ./bin/greenagonia deploy \
+  ./greenagonia deploy \
     --env "${GREENAGONIA_ENV:-prod}" \
     --email "$GREENAGONIA_EMAIL" \
     ${GREENAGONIA_REGION:+--region "$GREENAGONIA_REGION"}
   echo
-  say "storefront: ./bin/greenagonia web --env ${GREENAGONIA_ENV:-prod}"
+  say "storefront: ./greenagonia web --env ${GREENAGONIA_ENV:-prod}"
 else
   printf "  ${BOLD}next steps${NC}\n\n"
   printf "    ${DIM}# 1. PagerDuty admin API key (Integrations -> API Access Keys)${NC}\n"
   printf "    export PAGERDUTY_TOKEN=<your-key>\n\n"
   printf "    ${DIM}# 2. deploy (creates users/services/orchestration in PagerDuty)${NC}\n"
-  printf "    ./bin/greenagonia deploy --env prod --email you@example.com\n"
+  printf "    ./greenagonia deploy --env prod --email you@example.com\n"
   printf "    ${DIM}#    EU account? add: --region eu${NC}\n\n"
   printf "    ${DIM}# 3. open the storefront (serves the Greenagonia e-commerce site locally)${NC}\n"
-  printf "    ./bin/greenagonia web --env prod\n\n"
+  printf "    ./greenagonia web --env prod\n\n"
   printf "    ${DIM}# hosted elsewhere? set the base URL first:${NC}\n"
-  printf "    ${DIM}# ./bin/greenagonia site-url http://your-host --env prod${NC}\n\n"
-  printf "    ${DIM}full walkthrough: ./bin/greenagonia setup${NC}\n"
+  printf "    ${DIM}# ./greenagonia site-url http://your-host --env prod${NC}\n\n"
+  printf "    ${DIM}full walkthrough: ./greenagonia setup${NC}\n"
 fi
 echo
 hr
-printf "  ${DIM}docs: README.md · guided setup: ./bin/greenagonia setup${NC}\n\n"
+printf "  ${DIM}docs: README.md · guided setup: ./greenagonia setup${NC}\n\n"

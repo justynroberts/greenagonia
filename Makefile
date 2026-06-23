@@ -1,6 +1,6 @@
 .PHONY: build build-all clean sync-site generate-scenarios fmt vet
 
-BIN      := bin
+BIN      := .
 PKG_DIR  := ./cli
 NAME     := greenagonia
 SITE_SRC := ./site
@@ -21,20 +21,18 @@ sync-site: generate-scenarios
 
 # Native build for the host platform.
 build: sync-site
-	mkdir -p $(BIN)
-	cd $(PKG_DIR) && go build -trimpath -ldflags "-s -w" -o ../$(BIN)/$(NAME) .
+	cd $(PKG_DIR) && go build -trimpath -ldflags "-s -w" -o ../$(NAME) .
 
 # Cross-compile for the usual desktop targets.
 build-all: sync-site
-	mkdir -p $(BIN)
-	cd $(PKG_DIR) && GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o ../$(BIN)/$(NAME)-darwin-arm64 .
-	cd $(PKG_DIR) && GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../$(BIN)/$(NAME)-darwin-amd64 .
-	cd $(PKG_DIR) && GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../$(BIN)/$(NAME)-linux-amd64 .
-	cd $(PKG_DIR) && GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o ../$(BIN)/$(NAME)-linux-arm64 .
-	cd $(PKG_DIR) && GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../$(BIN)/$(NAME)-windows-amd64.exe .
+	cd $(PKG_DIR) && GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o ../$(NAME)-darwin-arm64 .
+	cd $(PKG_DIR) && GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../$(NAME)-darwin-amd64 .
+	cd $(PKG_DIR) && GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../$(NAME)-linux-amd64 .
+	cd $(PKG_DIR) && GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o ../$(NAME)-linux-arm64 .
+	cd $(PKG_DIR) && GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../$(NAME)-windows-amd64.exe .
 
 clean:
-	rm -rf $(BIN) $(SITE_DST)
+	rm -f $(NAME) $(NAME)-darwin-* $(NAME)-linux-* $(NAME)-windows-* && rm -rf $(SITE_DST)
 
 fmt:
 	cd $(PKG_DIR) && go fmt ./...
