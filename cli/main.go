@@ -1136,6 +1136,8 @@ func main() {
 		cmdWeb(os.Args[2:])
 	case "site-url":
 		cmdSiteURL(os.Args[2:])
+	case "shared":
+		cmdShared(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -1148,36 +1150,33 @@ func main() {
 func usage() {
 	banner()
 	fmt.Println(`usage:
-  greenagonia setup                                                # start here
+  greenagonia setup                                                # single-user: start here
   greenagonia deploy    --api-token <t> --email <e> [--env <name>] [--region us|eu]
                         [--user-name <n>] [--with-workflows]
   greenagonia undeploy  --api-token <t> [--env <name>] [--with-workflows]
   greenagonia scenarios list
   greenagonia scenarios run     [--env <name>] --scenario <name> [--repeat N] [--no-delay]
                                 [--routing-key <k> [--region us|eu]]
-  greenagonia scenarios resolve [--env <name>] --scenario <name|all>   # close incidents
-  greenagonia web       [--env <name>] [--site-url <u>] [--no-open]    # open storefront
-  greenagonia site-url  <url>  [--env <name>]                           # set hosted URL
+  greenagonia scenarios resolve [--env <name>] --scenario <name|all>
+  greenagonia web       [--env <name>] [--site-url <u>] [--no-open]
+  greenagonia site-url  <url>  [--env <name>]
 
-environment variables (override flag defaults):
-  PAGERDUTY_TOKEN     used by --api-token
-  PD_ROUTING_KEY      used by --routing-key (overrides state file)
+  greenagonia shared setup                                         # shared env: start here
+  greenagonia shared token | user-token | slack-token
+  greenagonia shared admin add <INI> "Name" <email> [slack-email]
+  greenagonia shared admin remove <INI> | list
+  greenagonia shared deploy | destroy
+  greenagonia shared urls [INITIALS]
+  greenagonia shared site-url [URL]
+  greenagonia shared slack-channels
+
+environment variables:
+  PAGERDUTY_TOKEN     used by --api-token (single-user deploy)
+  PD_ROUTING_KEY      used by --routing-key
   NO_COLOR            disable colour output
 
-region defaults to 'us' (api.pagerduty.com); use '--region eu' for
-EU accounts (api.eu.pagerduty.com). The region is recorded in the state
-file so scenarios fire against the right Events API host automatically.
-
-after a successful deploy, the routing key and per-service change-event
-keys are saved to ~/.greenagonia/<env>.json, so 'scenarios run --env <name>'
-needs no further flags.
-
-'greenagonia web' serves the embedded storefront on localhost and opens it in
-the browser with your routing key pre-loaded. Use 'greenagonia site-url' to
-point at a hosted copy instead (no local server is started for external URLs).
-
-terraform must be on PATH for deploy / undeploy.
-run 'greenagonia setup' for the full start-to-finish walkthrough.`)
+run 'greenagonia setup' for the single-user walkthrough.
+run 'greenagonia shared' for shared-environment subcommands.`)
 }
 
 // setupGuide is what `greenagonia setup` prints — a complete onboarding

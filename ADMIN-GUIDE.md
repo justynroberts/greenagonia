@@ -11,7 +11,7 @@ PagerDuty account**, driven by a hosted e-commerce storefront whose checkout
 fails on demand.
 
 ```
-shared-usage/shared-site        the storefront (static site, runs anywhere)
+site/                           the storefront (static site, runs anywhere)
         │  1. POST change events (GitHub deploy, LaunchDarkly flag — backdated)
         │  2. POST alert event → your personal routing key
         ▼
@@ -60,13 +60,12 @@ fictional and deliver nowhere.
 to your team. You see your own team, services, schedules, orchestration and
 incidents — plus the shared personas — and nothing belonging to other
 admins. Inside your team you're a manager, so you can tweak anything that's
-yours. If something you expect to see is missing, it probably belongs to
-someone else's stack (or it's the shared catch-all, which only the
-environment operator sees).
+yours.
 
 ## Prerequisites
 
-- 🟢 macOS/Linux with `terraform` (≥ 1.5) and `python3`
+- 🟢 macOS/Linux with `terraform` (≥ 1.5) on PATH
+- 🟢 The `greenagonia` CLI — build it with `make build` from the repo root
 - 🟢 A PagerDuty account where you have admin access, and a **REST API key**
   with read/write scope (*Integrations → API Access Keys*)
 - 🟢 Your email must **not** already exist as a user in that account
@@ -76,35 +75,36 @@ environment operator sees).
 ## First-time setup (one person does this)
 
 ```bash
-cd ~/work/greenagonia/shared-terraform
+# From the repo root:
+make build
 
-./setup.sh setup     # wizard: token (hidden), region, time zone, site URL,
-                     # workflows y/n, Slack y/n, first admin
-./setup.sh deploy    # terraform plan → review → confirm → apply
+greenagonia shared setup    # wizard: token (hidden), region, time zone, site URL,
+                            # workflows y/n, Slack y/n, first admin
+greenagonia shared deploy   # terraform plan → review → confirm → apply
 ```
 
 `deploy` ends by printing each admin's personal storefront link. The token is
-stored in `secrets.auto.tfvars.json` (chmod 600, gitignored) — it never
-leaves this directory.
+stored in `terraform-shared/secrets.auto.tfvars.json` (chmod 600, gitignored) —
+it never leaves the repo directory.
 
 ## Adding yourself (or anyone) as an admin
 
 ```bash
-./setup.sh admin add JR "Justyn Roberts" justyn@example.com
-./setup.sh deploy
+greenagonia shared admin add JR "Justyn Roberts" justyn@example.com
+greenagonia shared deploy
 ```
 
 - Initials are 2–4 capital letters and name every resource.
 - **If your initials are taken**, the tool derives free ones from your name
-  automatically: `JR → JRO → JROB → JOR`. It tells you what it picked.
+  automatically: `JR → JRO → JROB → JUR`. It tells you what it picked.
 - Re-adding the same email under the same initials updates the entry.
-- `./setup.sh admin remove JR` + deploy destroys that admin's stack (only
+- `greenagonia shared admin remove JR` + deploy destroys that admin's stack (only
   theirs — plans never touch other admins' resources).
-- `./setup.sh admin list` shows who's configured.
+- `greenagonia shared admin list` shows who's configured.
 
 ## Running a demo
 
-1. Get your link: `./setup.sh urls` — it looks like
+1. Get your link: `greenagonia shared urls` — it looks like
    `https://<site>/?pdkey=R0…`. Opening it stores your routing key in the
    browser (and scrubs it from the address bar). One-time per browser.
 2. The storefront front page **leads with a checkout card**. Click **Pay**.
@@ -133,7 +133,6 @@ The site looks like a normal shop. To reach the controls:
 - **double-click the header logo** to change/remove the stored routing key
 - the console shows three key fields: routing key, change event key (GitHub),
   change event key (LaunchDarkly) — all pre-loaded from your `?pdkey=` URL
-- switch the armed scenario to **All systems healthy** (checkout then succeeds)
 - an event log shows everything dispatched in this browser session
 
 The site fires exactly **one scenario** — `bad-payment-deploy` / "Card
@@ -145,18 +144,16 @@ CLI, including dedup key and `custom_details`.
 It's a zero-build static site. For a laptop demo:
 
 ```bash
-cd ~/work/greenagonia/shared-usage/shared-site
-python3 -m http.server 8080
+cd site && python3 -m http.server 8080
 ```
 
 For a team, host it once (GitHub Pages, an EC2 instance, or any static host) and
-tell setup.sh the URL so `./setup.sh urls` emits correct links:
+tell the CLI the URL so `greenagonia shared urls` emits correct links:
 
 ```bash
-cd shared-terraform
-./setup.sh site-url http://3.85.144.140
-./setup.sh deploy          # re-applies; outputs get the new base URL
-./setup.sh urls            # shows updated links
+greenagonia shared site-url http://3.85.144.140
+greenagonia shared deploy       # re-applies; outputs get the new base URL
+greenagonia shared urls         # shows updated links
 ```
 
 **HTTP vs HTTPS:** the site works over plain HTTP. GitHub Pages and most CDN
@@ -168,14 +165,13 @@ URL pre-loading (CORS restriction).
 | Symptom | Cause / fix |
 |---|---|
 | Failure screen says "alert NOT sent — no routing key configured" | No key in this browser. Open your `?pdkey=` link again, or double-click the header logo and paste the key. |
-| "alert NOT sent — HTTP 400" | Wrong key. It must be the **orchestration routing key** from `./setup.sh urls`, not a REST token or another integration key. |
-| Change events not appearing in Recent Changes | Change keys not set. Open ops console → paste the keys shown by `./setup.sh urls`, or use the full URL with `?pdchangekey=&pdldkey=`. |
-| Checkout succeeds when you wanted a failure | Scenario was switched to healthy in the ops console — switch it back. Default is failing. |
-| `terraform apply` → 401 | Token/region mismatch — EU accounts need region `eu` (`./setup.sh token`). |
-| Apply fails creating workflows (404) | Account lacks the Incident Workflows entitlement. Re-run `./setup.sh setup` and answer "n" to workflows (and Slack). |
-| Apply fails creating `pagerduty_slack_connection` → 401/403 | The `pagerduty_user_token` is missing or wrong. Run `./setup.sh user-token`. This resource requires a user-level token, not the account REST API key. |
-| Apply fails on the Slack step's action ID | Action catalogues are account-specific. List yours and set `slack_create_channel_action_id` — the curl is in `shared-terraform/README.md`. |
-| Slack channels error `name_taken` on apply | Channels already exist in the workspace. Import them: see the import instructions in `shared-terraform/README.md`. |
+| "alert NOT sent — HTTP 400" | Wrong key. It must be the **orchestration routing key** from `greenagonia shared urls`, not a REST token or another integration key. |
+| Change events not appearing in Recent Changes | Change keys not set. Open ops console → paste the keys shown by `greenagonia shared urls`, or use the full URL with `?pdchangekey=&pdldkey=`. |
+| `terraform apply` → 401 | Token/region mismatch — EU accounts need region `eu` (re-run `greenagonia shared token`). |
+| Apply fails creating workflows (404) | Account lacks the Incident Workflows entitlement. Re-run `greenagonia shared setup` and answer "n" to workflows (and Slack). |
+| Apply fails creating `pagerduty_slack_connection` → 401/403 | The `pagerduty_user_token` is missing or wrong. Run `greenagonia shared user-token`. This resource requires a user-level token, not the account REST API key. |
+| Apply fails on the Slack step's action ID | Action catalogues are account-specific. List yours and set `slack_create_channel_action_id` — the curl is in `terraform-shared/README.md`. |
+| Slack channels error `name_taken` on apply | Channels already exist in the workspace. Import them: see the import instructions in `terraform-shared/README.md`. |
 | Apply fails on alert grouping | No AIOps add-on. In `services.tf`, switch `alert_grouping_parameters` to `type = "time"`. |
 | "user with this email already exists" | The email is already a user in the account — use a different one or remove the existing user. |
 | Incident lands on `unrouted-events` | The event's `custom_details.service` didn't match a known service name — check the payload. |
@@ -183,18 +179,20 @@ URL pre-loading (CORS restriction).
 ## Teardown
 
 ```bash
-./setup.sh destroy    # asks you to type "destroy"; removes everything,
-                      # including the personas
+greenagonia shared destroy    # asks you to type "destroy"; removes everything,
+                              # including the personas
 ```
 
 ## Repo map
 
 ```
-greenagonia/
-├── ADMIN-GUIDE.md            this file
-├── CLAUDE.md                 context for Claude Code sessions
-├── single-user/              the original one-person env (Terraform + Go CLI,
-│                             7 scenarios, own README) — separate from shared
-├── shared-terraform/         the shared environment (this guide) + setup.sh
-└── shared-usage/shared-site/ the storefront (own README: console, internals)
+greenagonia/              (this repo — justynroberts/greenagonia)
+├── ADMIN-GUIDE.md        this file
+├── CLAUDE.md             context for Claude Code sessions
+├── Makefile              build CLI, generate scenarios.json, sync site
+├── site/                 storefront source (static site, serve anywhere)
+├── terraform/            single-user Terraform
+├── terraform-shared/     shared environment Terraform (state gitignored, kept locally)
+└── cli/
+    └── main.go + shared.go   the greenagonia CLI
 ```
