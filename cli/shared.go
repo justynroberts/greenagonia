@@ -525,7 +525,8 @@ func cmdSharedDeploy(dir string) {
 		die("terraform init: " + err.Error())
 	}
 
-	planFile := filepath.Join(dir, "tfplan")
+	absPlanFile, _ := filepath.Abs(filepath.Join(dir, "tfplan"))
+	planFile := absPlanFile
 	fmt.Printf("\n  %s  terraform plan\n\n", dim("▸"))
 	if err := tfRun(dir, "plan", "-out="+planFile); err != nil {
 		_ = os.Remove(planFile)
