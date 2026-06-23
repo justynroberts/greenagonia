@@ -1,5 +1,4 @@
-# build output
-/greenagonia
+# build output (binary lands at parent repo root: ../greenagonia)
 
 # site files copied here at build time (source of truth: site/)
 cli/site/

@@ -65,8 +65,8 @@ echo
 # --- build -----------------------------------------------------------------
 printf "  ${BOLD}building${NC}\n"
 mkdir -p bin
-( cd cli && go build -trimpath -ldflags "-s -w" -o ../greenagonia . )
-say "built ./greenagonia ($(du -h greenagonia | cut -f1 | tr -d ' '))"
+( cd cli && go build -trimpath -ldflags "-s -w" -o ../../greenagonia . )
+say "built ./greenagonia ($(du -h ../greenagonia | cut -f1 | tr -d ' '))"
 echo
 
 # --- deploy or print next steps ---------------------------------------------
