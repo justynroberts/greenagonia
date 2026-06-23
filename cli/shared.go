@@ -53,13 +53,17 @@ type sharedSecrets struct {
 // ---------------------------------------------------------------------------
 
 func defaultSharedTfDir() string {
-	if _, err := os.Stat("terraform-shared/main.tf"); err == nil {
-		return "terraform-shared"
-	}
+	candidates := []string{"terraform-shared", "single-user/terraform-shared"}
 	if exe, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(exe), "..", "terraform-shared")
-		if _, err := os.Stat(filepath.Join(cand, "main.tf")); err == nil {
-			return cand
+		dir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(dir, "terraform-shared"),
+			filepath.Join(dir, "single-user", "terraform-shared"),
+		)
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(filepath.Join(c, "main.tf")); err == nil {
+			return c
 		}
 	}
 	return "terraform-shared"

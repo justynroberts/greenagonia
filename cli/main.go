@@ -1632,13 +1632,17 @@ func terraformOutputs(dir string) (map[string]json.RawMessage, error) {
 }
 
 func defaultTfDir() string {
-	if _, err := os.Stat("terraform/main.tf"); err == nil {
-		return "terraform"
-	}
+	candidates := []string{"terraform", "single-user/terraform"}
 	if exe, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(exe), "..", "terraform")
-		if _, err := os.Stat(filepath.Join(cand, "main.tf")); err == nil {
-			return cand
+		dir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(dir, "terraform"),
+			filepath.Join(dir, "single-user", "terraform"),
+		)
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(filepath.Join(c, "main.tf")); err == nil {
+			return c
 		}
 	}
 	return "terraform"
