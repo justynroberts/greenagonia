@@ -28,8 +28,8 @@
 #   workflows.tf             pagerduty_incident_workflow + triggers (incl. Slack)
 #   variables.tf / outputs.tf / main.tf (provider + the catalogue locals)
 #
-# STATE: local, in this directory (terraform.tfstate, gitignored). One
-# person applies at a time. If multiple admins ever run applies, migrate to
+# STATE: local backend writing to ../state/terraform-shared.tfstate (gitignored).
+# One person applies at a time. If multiple admins ever run applies, migrate to
 # a remote backend (HCP Terraform free tier gives state + locking) — see
 # README.md.
 #
@@ -40,6 +40,9 @@
 
 terraform {
   required_version = ">= 1.5"
+  backend "local" {
+    path = "../state/terraform-shared.tfstate"
+  }
   required_providers {
     pagerduty = {
       source  = "PagerDuty/pagerduty"
