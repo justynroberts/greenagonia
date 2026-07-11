@@ -24,10 +24,10 @@ data "slack_user" "admin" {
 resource "slack_conversation" "incidents" {
   for_each = var.enable_slack ? var.admins : {}
 
-  name                                 = "${lower(each.key)}-incidents"
-  is_private                           = false
-  action_on_update_permanent_members   = "none"
-  permanent_members                    = contains(keys(local.slack_admins), each.key) ? [data.slack_user.admin[each.key].id] : []
+  name                               = "${lower(each.key)}-incidents"
+  is_private                         = false
+  action_on_update_permanent_members = "none"
+  permanent_members                  = contains(keys(local.slack_admins), each.key) ? [data.slack_user.admin[each.key].id] : []
 }
 
 # One Slack connection per admin team → their {ini}-incidents channel.
@@ -64,10 +64,10 @@ resource "pagerduty_slack_connection" "incidents" {
 resource "slack_conversation" "greenagonia_incidents" {
   count = var.enable_slack ? 1 : 0
 
-  name                                 = "greenagonia-incidents"
-  is_private                           = false
-  action_on_update_permanent_members   = "none"
-  permanent_members                    = [for k in keys(local.slack_admins) : data.slack_user.admin[k].id]
+  name                               = "greenagonia-incidents"
+  is_private                         = false
+  action_on_update_permanent_members = "none"
+  permanent_members                  = [for k in keys(local.slack_admins) : data.slack_user.admin[k].id]
 }
 
 resource "pagerduty_slack_connection" "greenagonia_incidents" {

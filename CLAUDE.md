@@ -15,6 +15,7 @@ greenagonia/                    this repo root
 ├── quickstart.sh               macOS prereqs + build from source
 ├── install.sh                  install binary + terraform globally on Linux x86_64
 ├── backup-state.sh             back up state/ to dated tar.gz
+├── docker-compose.yml          serve site/ via nginx on port 8080
 ├── README.md                   CLI reference and architecture
 ├── ADMIN-GUIDE.md              step-by-step walkthrough
 ├── site/                       storefront source (static site)

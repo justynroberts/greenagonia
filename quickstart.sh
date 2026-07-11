@@ -15,7 +15,7 @@
 #   - macOS (Apple Silicon or Intel); Linux works too if brew is present
 #   - Homebrew                  https://brew.sh
 #   - Terraform >= 1.5          installed automatically via brew if missing
-#   - Go >= 1.22                installed automatically via brew if missing
+#   - Go >= 1.25                installed automatically via brew if missing
 #   - A PagerDuty account with an admin REST API key
 #       create at: Integrations -> API Access Keys  (Read/Write access)
 # ==========================================================================
@@ -32,7 +32,7 @@ echo
 
 # --- prerequisites ---------------------------------------------------------
 printf "  ${BOLD}prerequisites${NC}\n"
-printf "  ${DIM}macOS + Homebrew, Terraform >=1.5, Go >=1.22,${NC}\n"
+printf "  ${DIM}macOS + Homebrew, Terraform >=1.5, Go >=1.25,${NC}\n"
 printf "  ${DIM}a PagerDuty admin API key.${NC}\n"
 echo
 

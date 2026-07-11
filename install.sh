@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# install.sh — install greenagonia binary + terraform on a Linux x86_64 server
+# install.sh — install greenagonia binary + terraform on a Linux server
 set -euo pipefail
 
 REPO="justynroberts/greenagonia"
 TF_VERSION="1.9.8"
 INSTALL_DIR="/usr/local/bin"
+
+case "$(uname -m)" in
+    x86_64)          BIN_ARCH="amd64" ;;
+    aarch64 | arm64) BIN_ARCH="arm64" ;;
+    *)               echo "error: unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -30,15 +36,12 @@ LATEST=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
     | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\(.*\)".*/\1/')
 
 if [[ -z "$LATEST" ]]; then
-    # No release tags yet — download the pre-built linux binary from the repo root
-    info "no release found; downloading greenagonia-linux-amd64 from main branch..."
-    curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/greenagonia-linux-amd64" \
-        -o /tmp/greenagonia
-else
-    info "downloading greenagonia ${LATEST}..."
-    curl -fsSL "https://github.com/${REPO}/releases/download/${LATEST}/greenagonia-linux-amd64" \
-        -o /tmp/greenagonia
+    die "no release found on ${REPO} — build from source instead: clone the repo and run 'make build'"
 fi
+
+info "downloading greenagonia ${LATEST} (linux-${BIN_ARCH})..."
+curl -fsSL "https://github.com/${REPO}/releases/download/${LATEST}/greenagonia-linux-${BIN_ARCH}" \
+    -o /tmp/greenagonia
 
 chmod +x /tmp/greenagonia
 sudo mv /tmp/greenagonia "${INSTALL_DIR}/greenagonia"
@@ -54,7 +57,7 @@ if command -v terraform >/dev/null 2>&1; then
     info "terraform already installed: ${INSTALLED}"
 else
     info "installing terraform ${TF_VERSION}..."
-    TF_ZIP="terraform_${TF_VERSION}_linux_amd64.zip"
+    TF_ZIP="terraform_${TF_VERSION}_linux_${BIN_ARCH}.zip"
     curl -fsSL "https://releases.hashicorp.com/terraform/${TF_VERSION}/${TF_ZIP}" -o /tmp/${TF_ZIP}
     unzip -q /tmp/${TF_ZIP} -d /tmp/tf_extract
     sudo mv /tmp/tf_extract/terraform "${INSTALL_DIR}/terraform"

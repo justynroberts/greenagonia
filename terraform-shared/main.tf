@@ -141,10 +141,10 @@ locals {
       for admin in keys(var.admins) : [
         for biz_name, biz in local.business_services : [
           for tech_name in biz.supports : {
-            key     = "${admin}/${biz_name}/${tech_name}"
-            admin   = admin
-            biz     = biz_name
-            tech    = tech_name
+            key   = "${admin}/${biz_name}/${tech_name}"
+            admin = admin
+            biz   = biz_name
+            tech  = tech_name
           }
         ]
       ]

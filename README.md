@@ -111,6 +111,6 @@ docker compose up -d
 |---|---|
 | **Download binary** (recommended) | `./get-binary.sh` — detects macOS arm64/amd64 or Linux amd64/arm64 |
 | **Linux global install** | `curl -fsSL .../install.sh \| bash` — puts binary in `/usr/local/bin`, installs Terraform |
-| **Build from source** | `make build` (needs Go ≥ 1.22) · macOS: `./quickstart.sh` installs prereqs |
+| **Build from source** | `make build` (needs Go ≥ 1.25) · macOS: `./quickstart.sh` installs prereqs |
 
 Full walkthrough: **[ADMIN-GUIDE.md](ADMIN-GUIDE.md)**

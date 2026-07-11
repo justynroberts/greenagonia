@@ -81,7 +81,7 @@ On Linux, skip the above and use this instead — it installs both the binary
 and Terraform in one go:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/main/install.sh | bash
 ```
 
 Check everything is working:
@@ -416,7 +416,7 @@ Then re-run `./greenagonia deploy`.
 
 | What you see | What's wrong | How to fix it |
 |---|---|---|
-| "alert NOT sent — no routing key configured" | No key saved in this browser | Open your `?pdkey=` link again, or double-click the header logo in the storefront to paste the key |
+| "alert NOT sent — no routing key configured" | No key saved in this browser | Open your `?pdkey=` link again, or open the ops console (Ctrl/Cmd+Shift+K) and paste the key there |
 | "alert NOT sent — HTTP 400" | Wrong key type | Must be the orchestration routing key from `./greenagonia urls` — not a REST token |
 | Change events missing from *Recent Changes* | Change event keys not set | Open the ops console, paste the keys from `./greenagonia urls`, or use the full `?pdkey=&pdchangekey=&pdldkey=` URL |
 | `terraform apply` → 401 Unauthorized | Wrong token or wrong region | EU accounts need region `eu` — run `./greenagonia token` then `./greenagonia setup` |
@@ -465,6 +465,7 @@ greenagonia/
 ├── install.sh            Linux: installs binary + Terraform globally
 ├── quickstart.sh         macOS: installs Go + Terraform via Homebrew, builds from source
 ├── backup-state.sh       backs up state/ to a dated archive
+├── docker-compose.yml    serve the storefront via nginx (docker compose up -d)
 ├── Makefile              build / build-all / clean
 ├── site/                 the storefront (static HTML/CSS/JS — just serve it)
 ├── state/                Terraform state (gitignored — don't delete this)
