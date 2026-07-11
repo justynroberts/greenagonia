@@ -200,6 +200,46 @@ where it is:
 ./greenagonia urls            # check your updated link
 ```
 
+**With Docker (nginx container):**
+
+A `docker-compose.yml` is included at the repo root. It serves `site/`
+through nginx on port 8080.
+
+```bash
+docker compose up -d
+```
+
+That's it. The container mounts `site/` read-only, so any changes you make
+to the site files are reflected immediately without a rebuild.
+
+To run on a different port (e.g. 80):
+
+```yaml
+# docker-compose.yml
+services:
+  storefront:
+    image: nginx:alpine
+    ports:
+      - "80:80"        # change left side only
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+    restart: unless-stopped
+```
+
+Then register the URL and redeploy:
+
+```bash
+./greenagonia site-url http://your-server-ip
+./greenagonia deploy
+./greenagonia urls
+```
+
+Stop the container:
+
+```bash
+docker compose down
+```
+
 ---
 
 ## Running a demo

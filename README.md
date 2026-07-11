@@ -95,6 +95,9 @@ The storefront is plain HTML/CSS/JS — no build step.
 # Local
 cd site && python3 -m http.server 8080
 
+# Docker / nginx (included docker-compose.yml)
+docker compose up -d
+
 # Shared (host site/ anywhere, then register the URL)
 ./greenagonia site-url https://demo.example.com
 ./greenagonia deploy && ./greenagonia urls
