@@ -99,9 +99,17 @@ Terraform.
 cd greenagonia && make build
 ```
 
-Binary lands at `./greenagonia` (repo root).
+Binary lands at `./greenagonia` (repo root). Add it to your PATH so you can
+run it from anywhere:
 
-Add the binary to your PATH or use the full path. Confirm it works:
+```bash
+# from inside the repo directory:
+export PATH="$PATH:$(pwd)"
+# make permanent:
+echo 'export PATH="$PATH:$HOME/path/to/greenagonia"' >> ~/.zshrc
+```
+
+Confirm it works:
 
 ```bash
 greenagonia --help

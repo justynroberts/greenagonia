@@ -46,6 +46,13 @@ make clean          # remove compiled binaries
    definitions from the Go source (single source of truth).
 2. `go build` — compiles the binary to `./greenagonia` (repo root).
 
+Add the repo to your PATH so you can run `greenagonia` from anywhere:
+
+```bash
+export PATH="$PATH:$(pwd)"           # from inside the repo directory
+echo 'export PATH="$PATH:$HOME/path/to/greenagonia"' >> ~/.zshrc   # permanent
+```
+
 ---
 
 ## CLI reference
