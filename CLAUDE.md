@@ -1,4 +1,4 @@
-# CLAUDE.md — Greenagonia (single-user/)
+# CLAUDE.md — Greenagonia
 
 This is the **shared, multi-admin** Greenagonia demo environment. Single-user
 deploy/undeploy/web/scenarios-run commands no longer exist. Everything here
@@ -9,7 +9,7 @@ is oriented around a shared PagerDuty account with one stack per admin.
 ## Layout
 
 ```
-single-user/                    this repo root
+greenagonia/                    this repo root
 ├── Makefile                    build CLI + generate scenarios.json
 ├── quickstart.sh               macOS prereqs + build
 ├── install.sh                  Linux x86_64 binary + terraform install
@@ -40,7 +40,7 @@ single-user/                    this repo root
 ## Build flow
 
 ```bash
-cd single-user && make build
+cd greenagonia && make build
 ```
 
 Two steps, in order:
@@ -49,9 +49,8 @@ Two steps, in order:
    Exports scenario definitions from `cli/main.go` (the single source of
    truth for all scenario data) into `site/scenarios.json`.
 
-2. `go build -trimpath -ldflags "-s -w" -o ../../greenagonia .`
-   Compiles the binary. Output: `~/work/greenagonia/greenagonia` (the repo
-   root, one level above `single-user/`).
+2. `go build -trimpath -ldflags "-s -w" -o ../greenagonia .`
+   Compiles the binary to `./greenagonia` (repo root).
 
 `make build-all` cross-compiles for macOS arm64/amd64, Linux amd64/arm64,
 and Windows amd64.
@@ -101,7 +100,7 @@ name and routes to their prefixed service (`{INI}-payment-gateway`).
 
 ## Architecture notes
 
-- **Binary output:** `~/work/greenagonia/greenagonia` (parent repo root).
+- **Binary output:** `./greenagonia` (repo root, alongside Makefile).
 - **State:** `state/` (gitignored). One person applies at a time.
 - **Secrets:** `terraform-shared/secrets.auto.tfvars.json` (chmod 600,
   gitignored). Never committed.

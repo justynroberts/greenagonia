@@ -1,4 +1,8 @@
-# build output (binary lands at parent repo root: ../greenagonia)
+# compiled binaries (land in repo root after make build)
+greenagonia
+greenagonia-darwin-*
+greenagonia-linux-*
+greenagonia-windows-*
 
 # root state dir — keep the dir, ignore everything in it
 state/*

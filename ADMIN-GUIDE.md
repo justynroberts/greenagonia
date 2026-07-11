@@ -78,16 +78,16 @@ Inside your team you are a manager, so you can adjust anything that is yours.
 
 ```bash
 git clone https://github.com/justynroberts/greenagonia.git
-cd greenagonia/single-user && ./quickstart.sh
+cd greenagonia && ./quickstart.sh
 ```
 
 `quickstart.sh` installs Terraform and Go via Homebrew if missing, then
-builds the binary to `~/work/greenagonia/greenagonia`.
+builds the binary to `./greenagonia` (repo root).
 
 **Linux x86_64:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/main/single-user/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/master/install.sh | bash
 ```
 
 Downloads the pre-built binary to `/usr/local/bin/greenagonia` and installs
@@ -96,10 +96,10 @@ Terraform.
 **Build from source (any platform):**
 
 ```bash
-cd single-user && make build
+cd greenagonia && make build
 ```
 
-Binary lands at `~/work/greenagonia/greenagonia`.
+Binary lands at `./greenagonia` (repo root).
 
 Add the binary to your PATH or use the full path. Confirm it works:
 
@@ -369,7 +369,7 @@ reference; delete them manually when done.
 ## Repo map
 
 ```
-single-user/                this repo
+greenagonia/                this repo
 ├── README.md               CLI and architecture reference
 ├── ADMIN-GUIDE.md          this file
 ├── CLAUDE.md               context for Claude Code sessions

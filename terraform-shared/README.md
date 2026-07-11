@@ -131,8 +131,7 @@ The `greenagonia urls` CLI command wraps these outputs into a formatted table.
 
 ## State location
 
-State lives in `../state/` relative to this directory (i.e. `single-user/state/`,
-gitignored). One person applies at a time.
+State lives in `../state/` relative to this directory (gitignored). One person applies at a time.
 
 Back up state before a risky apply:
 

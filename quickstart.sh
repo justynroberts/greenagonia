@@ -8,10 +8,8 @@
 # What it does:
 #   1. Verifies prerequisites (listed below), installing terraform/go via
 #      Homebrew when missing.
-#   2. Builds the greenagonia CLI to ./greenagonia.
-#   3. If PAGERDUTY_TOKEN and GREENAGONIA_EMAIL are exported, deploys the
-#      PagerDuty environment immediately. Otherwise prints the exact
-#      commands to run next.
+#   2. Builds the greenagonia CLI to ./greenagonia (repo root).
+#   3. Prints the next steps to run.
 #
 # Prerequisites:
 #   - macOS (Apple Silicon or Intel); Linux works too if brew is present
@@ -20,9 +18,6 @@
 #   - Go >= 1.22                installed automatically via brew if missing
 #   - A PagerDuty account with an admin REST API key
 #       create at: Integrations -> API Access Keys  (Read/Write access)
-#   - An email address NOT already registered in that PagerDuty account
-#       (the deploy creates a new user with it)
-#   - EU PagerDuty accounts (*.eu.pagerduty.com): add --region eu on deploy
 # ==========================================================================
 set -euo pipefail
 
@@ -38,7 +33,7 @@ echo
 # --- prerequisites ---------------------------------------------------------
 printf "  ${BOLD}prerequisites${NC}\n"
 printf "  ${DIM}macOS + Homebrew, Terraform >=1.5, Go >=1.22,${NC}\n"
-printf "  ${DIM}a PagerDuty admin API key, and a fresh on-call email.${NC}\n"
+printf "  ${DIM}a PagerDuty admin API key.${NC}\n"
 echo
 
 if ! command -v brew >/dev/null 2>&1; then
@@ -64,33 +59,21 @@ echo
 
 # --- build -----------------------------------------------------------------
 printf "  ${BOLD}building${NC}\n"
-mkdir -p bin
-( cd cli && go build -trimpath -ldflags "-s -w" -o ../../greenagonia . )
-say "built ./greenagonia ($(du -h ../greenagonia | cut -f1 | tr -d ' '))"
+( cd cli && go build -trimpath -ldflags "-s -w" -o ../greenagonia . )
+say "built ./greenagonia"
 echo
 
-# --- deploy or print next steps ---------------------------------------------
-if [[ -n "${PAGERDUTY_TOKEN:-}" && -n "${GREENAGONIA_EMAIL:-}" ]]; then
-  printf "  ${BOLD}deploying${NC} ${DIM}(PAGERDUTY_TOKEN + GREENAGONIA_EMAIL detected)${NC}\n\n"
-  ./greenagonia deploy \
-    --env "${GREENAGONIA_ENV:-prod}" \
-    --email "$GREENAGONIA_EMAIL" \
-    ${GREENAGONIA_REGION:+--region "$GREENAGONIA_REGION"}
-  echo
-  say "storefront: ./greenagonia web --env ${GREENAGONIA_ENV:-prod}"
-else
-  printf "  ${BOLD}next steps${NC}\n\n"
-  printf "    ${DIM}# 1. PagerDuty admin API key (Integrations -> API Access Keys)${NC}\n"
-  printf "    export PAGERDUTY_TOKEN=<your-key>\n\n"
-  printf "    ${DIM}# 2. deploy (creates users/services/orchestration in PagerDuty)${NC}\n"
-  printf "    ./greenagonia deploy --env prod --email you@example.com\n"
-  printf "    ${DIM}#    EU account? add: --region eu${NC}\n\n"
-  printf "    ${DIM}# 3. open the storefront (serves the Greenagonia e-commerce site locally)${NC}\n"
-  printf "    ./greenagonia web --env prod\n\n"
-  printf "    ${DIM}# hosted elsewhere? set the base URL first:${NC}\n"
-  printf "    ${DIM}# ./greenagonia site-url http://your-host --env prod${NC}\n\n"
-  printf "    ${DIM}full walkthrough: ./greenagonia setup${NC}\n"
-fi
+# --- next steps ------------------------------------------------------------
+printf "  ${BOLD}next steps${NC}\n\n"
+printf "    ${DIM}# 1. Run the setup wizard (tokens, time zone, first admin)${NC}\n"
+printf "    ./greenagonia setup\n\n"
+printf "    ${DIM}# 2. Deploy the shared environment to PagerDuty${NC}\n"
+printf "    ./greenagonia deploy\n\n"
+printf "    ${DIM}# 3. Get per-admin storefront links${NC}\n"
+printf "    ./greenagonia urls\n\n"
+printf "    ${DIM}# 4. Serve the storefront locally${NC}\n"
+printf "    cd site && python3 -m http.server 8080\n\n"
+printf "    ${DIM}full walkthrough: ADMIN-GUIDE.md${NC}\n"
 echo
 hr
-printf "  ${DIM}docs: README.md · guided setup: ./greenagonia setup${NC}\n\n"
+printf "  ${DIM}docs: README.md · ADMIN-GUIDE.md${NC}\n\n"

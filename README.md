@@ -14,7 +14,7 @@ incident opens on that admin's services and pages them — nobody else.
 ### Linux x86_64 — one script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/main/single-user/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/master/install.sh | bash
 ```
 
 `install.sh` downloads the latest pre-built `greenagonia-linux-amd64` binary
@@ -25,27 +25,26 @@ already present.
 
 ```bash
 git clone https://github.com/justynroberts/greenagonia.git
-cd greenagonia/single-user && ./quickstart.sh
+cd greenagonia && ./quickstart.sh
 ```
 
 `quickstart.sh` checks/installs Terraform and Go via Homebrew, then builds the
-binary. The binary lands at `~/work/greenagonia/greenagonia` (the repo root,
-one level above `single-user/`).
+binary to `./greenagonia` (repo root).
 
 ### Build from source
 
 ```bash
-cd single-user
+cd greenagonia
 make build          # generates site/scenarios.json, compiles native binary
 make build-all      # cross-compiles for macOS (arm64/amd64), Linux (amd64/arm64), Windows
-make clean          # remove compiled binaries from the repo root
+make clean          # remove compiled binaries
 ```
 
 `make build` runs two steps in sequence:
 
 1. `greenagonia scenarios dump-json > site/scenarios.json` — exports scenario
    definitions from the Go source (single source of truth).
-2. `go build` — compiles the binary. Output: `~/work/greenagonia/greenagonia`.
+2. `go build` — compiles the binary to `./greenagonia` (repo root).
 
 ---
 
@@ -264,7 +263,7 @@ approve the migration).
 ## Repo layout
 
 ```
-single-user/              this repo — justynroberts/greenagonia
+greenagonia/              this repo — justynroberts/greenagonia
 ├── README.md             this file
 ├── ADMIN-GUIDE.md        step-by-step admin walkthrough
 ├── CLAUDE.md             context for Claude Code
