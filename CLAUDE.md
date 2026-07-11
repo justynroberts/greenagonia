@@ -11,8 +11,9 @@ is oriented around a shared PagerDuty account with one stack per admin.
 ```
 greenagonia/                    this repo root
 ├── Makefile                    build CLI + generate scenarios.json
-├── quickstart.sh               macOS prereqs + build
-├── install.sh                  Linux x86_64 binary + terraform install
+├── get-binary.sh               download the right pre-built binary for this platform
+├── quickstart.sh               macOS prereqs + build from source
+├── install.sh                  install binary + terraform globally on Linux x86_64
 ├── backup-state.sh             back up state/ to dated tar.gz
 ├── README.md                   CLI reference and architecture
 ├── ADMIN-GUIDE.md              step-by-step walkthrough

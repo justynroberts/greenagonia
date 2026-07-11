@@ -11,18 +11,32 @@ incident opens on that admin's services and pages them — nobody else.
 
 ## Install
 
-### macOS and Linux — pull and run
+### macOS and Linux — recommended
 
 ```bash
 git clone https://github.com/justynroberts/greenagonia.git
 cd greenagonia
-./get-binary.sh     # detects platform, downloads the right binary from releases
+./get-binary.sh
+```
+
+`get-binary.sh` detects your OS and CPU (macOS arm64/amd64, Linux amd64/arm64)
+and downloads the matching pre-built binary from the latest GitHub release,
+placing it at `./greenagonia`.
+
+You also need **Terraform ≥ 1.5** on your PATH:
+
+- macOS: `brew install terraform`
+- Linux: included automatically if you used `install.sh` (see below), or
+  download from [releases.hashicorp.com](https://releases.hashicorp.com/terraform/)
+
+Then run:
+
+```bash
 ./greenagonia setup
 ```
 
-`get-binary.sh` downloads the correct pre-built binary for your platform
-(macOS arm64/amd64, Linux amd64/arm64) from the latest GitHub release and
-places it at `./greenagonia`.
+The examples in this README use `./greenagonia`. If you add the repo directory
+to your PATH (`export PATH="$PATH:$(pwd)"` from inside it), you can drop the `./`.
 
 ### Linux — install globally (server)
 
@@ -30,8 +44,8 @@ places it at `./greenagonia`.
 curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/master/install.sh | bash
 ```
 
-Downloads the binary to `/usr/local/bin/greenagonia` and installs
-Terraform 1.9.8. Requires `curl` and `unzip`.
+Installs `greenagonia` to `/usr/local/bin/` and Terraform 1.9.8. After this,
+`greenagonia` is available everywhere without a path prefix.
 
 ### Build from source
 
@@ -267,9 +281,10 @@ greenagonia/              this repo — justynroberts/greenagonia
 ├── ADMIN-GUIDE.md        step-by-step admin walkthrough
 ├── CLAUDE.md             context for Claude Code
 ├── Makefile              make build / build-all / clean / generate-scenarios
-├── install.sh            install binary + terraform on Linux x86_64
+├── get-binary.sh         download the right pre-built binary for this platform
+├── install.sh            install binary + terraform globally on Linux x86_64
 ├── backup-state.sh       back up state/ to a dated tar.gz
-├── quickstart.sh         macOS prereqs + build
+├── quickstart.sh         macOS prereqs + build from source
 ├── site/                 storefront source (static site)
 │   ├── index.html
 │   ├── chaos.js          chaos engine; fetches scenarios.json at runtime

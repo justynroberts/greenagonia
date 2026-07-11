@@ -58,8 +58,9 @@ Inside your team you are a manager, so you can adjust anything that is yours.
 
 ## Prerequisites
 
-- 🟢 macOS or Linux with `terraform` (≥ 1.5) on PATH
-- 🟢 The `greenagonia` binary — see Install below
+- 🟢 macOS or Linux
+- 🟢 Terraform ≥ 1.5 on PATH — `brew install terraform` on macOS; bundled with `install.sh` on Linux
+- 🟢 The `greenagonia` binary — `./get-binary.sh` fetches the right one (see Install below)
 - 🟢 A PagerDuty account where you have admin access and a REST API key with
   read/write scope (Integrations → API Access Keys)
 - 🟢 The email address you want to use must not already exist as a user in
@@ -82,8 +83,17 @@ cd greenagonia
 ./get-binary.sh
 ```
 
-`get-binary.sh` detects your platform and downloads the right pre-built
-binary from the latest GitHub release to `./greenagonia`.
+`get-binary.sh` detects your OS and CPU and downloads the matching pre-built
+binary from the latest GitHub release, placing it at `./greenagonia`.
+
+You also need Terraform on your PATH:
+
+```bash
+# macOS
+brew install terraform
+
+# Linux — or use install.sh below which bundles Terraform automatically
+```
 
 **Linux — install globally (server/shared machine):**
 
@@ -91,19 +101,24 @@ binary from the latest GitHub release to `./greenagonia`.
 curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/master/install.sh | bash
 ```
 
-Downloads the binary to `/usr/local/bin/greenagonia` and installs Terraform.
+Installs `greenagonia` to `/usr/local/bin/` and Terraform 1.9.8. After this,
+run `greenagonia` from anywhere without a path prefix.
 
-**Build from source:**
+**Build from source (requires Go ≥ 1.22):**
 
 ```bash
-cd greenagonia && make build   # requires Go ≥ 1.22; ./quickstart.sh installs via Homebrew
+cd greenagonia && make build
+# macOS: ./quickstart.sh installs Go and Terraform via Homebrew if missing
 ```
 
-Confirm it works:
+Confirm the binary works:
 
 ```bash
 ./greenagonia --help
 ```
+
+All examples in this guide use `./greenagonia`. If you installed globally via
+`install.sh`, drop the `./`.
 
 ### Step 2 — Run the setup wizard
 
@@ -372,9 +387,10 @@ greenagonia/                this repo
 ├── ADMIN-GUIDE.md          this file
 ├── CLAUDE.md               context for Claude Code sessions
 ├── Makefile                build CLI, generate scenarios.json
-├── install.sh              Linux x86_64 install script
+├── get-binary.sh           download the right pre-built binary for this platform
+├── install.sh              install binary + terraform globally on Linux x86_64
 ├── backup-state.sh         back up state/ to dated tar.gz
-├── quickstart.sh           macOS prereqs + build
+├── quickstart.sh           macOS prereqs + build from source
 ├── site/                   storefront source (static site, serve anywhere)
 ├── state/                  terraform state (gitignored)
 ├── terraform-shared/       shared environment Terraform
