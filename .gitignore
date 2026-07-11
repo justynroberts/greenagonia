@@ -3,6 +3,7 @@
 # root state dir — keep the dir, ignore everything in it
 state/*
 !state/.gitkeep
+state/backups/
 
 # single-user terraform
 terraform/.terraform/
