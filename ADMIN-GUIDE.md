@@ -74,45 +74,35 @@ Inside your team you are a manager, so you can adjust anything that is yours.
 
 ### Step 1 — Install
 
-**macOS:**
+**macOS and Linux (recommended):**
 
 ```bash
 git clone https://github.com/justynroberts/greenagonia.git
-cd greenagonia && ./quickstart.sh
+cd greenagonia
+./get-binary.sh
 ```
 
-`quickstart.sh` installs Terraform and Go via Homebrew if missing, then
-builds the binary to `./greenagonia` (repo root).
+`get-binary.sh` detects your platform and downloads the right pre-built
+binary from the latest GitHub release to `./greenagonia`.
 
-**Linux x86_64:**
+**Linux — install globally (server/shared machine):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/master/install.sh | bash
 ```
 
-Downloads the pre-built binary to `/usr/local/bin/greenagonia` and installs
-Terraform.
+Downloads the binary to `/usr/local/bin/greenagonia` and installs Terraform.
 
-**Build from source (any platform):**
-
-```bash
-cd greenagonia && make build
-```
-
-Binary lands at `./greenagonia` (repo root). Add it to your PATH so you can
-run it from anywhere:
+**Build from source:**
 
 ```bash
-# from inside the repo directory:
-export PATH="$PATH:$(pwd)"
-# make permanent:
-echo 'export PATH="$PATH:$HOME/path/to/greenagonia"' >> ~/.zshrc
+cd greenagonia && make build   # requires Go ≥ 1.22; ./quickstart.sh installs via Homebrew
 ```
 
 Confirm it works:
 
 ```bash
-greenagonia --help
+./greenagonia --help
 ```
 
 ### Step 2 — Run the setup wizard

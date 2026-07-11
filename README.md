@@ -11,47 +11,39 @@ incident opens on that admin's services and pages them — nobody else.
 
 ## Install
 
-### Linux x86_64 — one script
+### macOS and Linux — pull and run
+
+```bash
+git clone https://github.com/justynroberts/greenagonia.git
+cd greenagonia
+./get-binary.sh     # detects platform, downloads the right binary from releases
+./greenagonia setup
+```
+
+`get-binary.sh` downloads the correct pre-built binary for your platform
+(macOS arm64/amd64, Linux amd64/arm64) from the latest GitHub release and
+places it at `./greenagonia`.
+
+### Linux — install globally (server)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/master/install.sh | bash
 ```
 
-`install.sh` downloads the latest pre-built `greenagonia-linux-amd64` binary
-to `/usr/local/bin/greenagonia` and installs Terraform 1.9.8 if it is not
-already present.
-
-### macOS — prereqs + build
-
-```bash
-git clone https://github.com/justynroberts/greenagonia.git
-cd greenagonia && ./quickstart.sh
-```
-
-`quickstart.sh` checks/installs Terraform and Go via Homebrew, then builds the
-binary to `./greenagonia` (repo root).
+Downloads the binary to `/usr/local/bin/greenagonia` and installs
+Terraform 1.9.8. Requires `curl` and `unzip`.
 
 ### Build from source
 
 ```bash
+git clone https://github.com/justynroberts/greenagonia.git
 cd greenagonia
 make build          # generates site/scenarios.json, compiles native binary
 make build-all      # cross-compiles for macOS (arm64/amd64), Linux (amd64/arm64), Windows
-make clean          # remove compiled binaries
 ```
 
-`make build` runs two steps in sequence:
-
-1. `greenagonia scenarios dump-json > site/scenarios.json` — exports scenario
-   definitions from the Go source (single source of truth).
-2. `go build` — compiles the binary to `./greenagonia` (repo root).
-
-Add the repo to your PATH so you can run `greenagonia` from anywhere:
-
-```bash
-export PATH="$PATH:$(pwd)"           # from inside the repo directory
-echo 'export PATH="$PATH:$HOME/path/to/greenagonia"' >> ~/.zshrc   # permanent
-```
+Requires Go ≥ 1.22 and Terraform ≥ 1.5. On macOS, `./quickstart.sh` installs
+both via Homebrew if missing.
 
 ---
 
