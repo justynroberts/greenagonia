@@ -1,30 +1,18 @@
-.PHONY: build build-all clean sync-site generate-scenarios fmt vet
+.PHONY: build build-all clean generate-scenarios fmt vet
 
-BIN      := ..
-PKG_DIR  := ./cli
-NAME     := greenagonia
-SITE_SRC := ./site
-SITE_DST := $(PKG_DIR)/site
+PKG_DIR := ./cli
+NAME    := greenagonia
 
-# Generate scenarios.json from Go source (single source of truth).
-# Bootstraps cli/site/ with a stub if it doesn't exist yet (fresh clone),
-# so go:embed compiles; sync-site replaces the stub with real content.
+# Generate scenarios.json in site/ from Go source (single source of truth).
 generate-scenarios:
-	@if [ ! -d $(SITE_DST) ]; then mkdir -p $(SITE_DST) && echo "" > $(SITE_DST)/placeholder; fi
-	cd $(PKG_DIR) && go run . scenarios dump-json > $(abspath $(SITE_SRC))/scenarios.json
-
-# Copy shared-site (including freshly generated scenarios.json) into the CLI package.
-sync-site: generate-scenarios
-	rm -rf $(SITE_DST)
-	mkdir -p $(SITE_DST)
-	cp -r $(SITE_SRC)/. $(SITE_DST)/
+	cd $(PKG_DIR) && go run . scenarios dump-json > ../site/scenarios.json
 
 # Native build for the host platform.
-build: sync-site
+build: generate-scenarios
 	cd $(PKG_DIR) && go build -trimpath -ldflags "-s -w" -o ../../$(NAME) .
 
 # Cross-compile for the usual desktop targets.
-build-all: sync-site
+build-all: generate-scenarios
 	cd $(PKG_DIR) && GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o ../../$(NAME)-darwin-arm64 .
 	cd $(PKG_DIR) && GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../../$(NAME)-darwin-amd64 .
 	cd $(PKG_DIR) && GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../../$(NAME)-linux-amd64 .
@@ -32,7 +20,7 @@ build-all: sync-site
 	cd $(PKG_DIR) && GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../../$(NAME)-windows-amd64.exe .
 
 clean:
-	rm -f $(BIN)/$(NAME) $(BIN)/$(NAME)-darwin-* $(BIN)/$(NAME)-linux-* $(BIN)/$(NAME)-windows-* && rm -rf $(SITE_DST)
+	rm -f ../$(NAME) ../$(NAME)-darwin-* ../$(NAME)-linux-* ../$(NAME)-windows-*
 
 fmt:
 	cd $(PKG_DIR) && go fmt ./...

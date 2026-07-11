@@ -1,8 +1,5 @@
 # build output (binary lands at parent repo root: ../greenagonia)
 
-# site files copied here at build time (source of truth: site/)
-cli/site/
-
 # root state dir — keep the dir, ignore everything in it
 state/*
 !state/.gitkeep
