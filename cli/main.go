@@ -472,11 +472,33 @@ func init() {
 // ===========================================================================
 
 func main() {
+	dir := defaultSharedTfDir()
+
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "setup":
+		cmdSetup(dir)
+	case "token":
+		cmdToken(dir)
+	case "user-token":
+		cmdUserToken(dir)
+	case "slack-token":
+		cmdSlackToken(dir)
+	case "admin":
+		cmdAdmin(dir, os.Args[2:])
+	case "deploy":
+		cmdDeploy(dir)
+	case "destroy":
+		cmdDestroy(dir)
+	case "urls":
+		cmdURLs(dir, os.Args[2:])
+	case "site-url":
+		cmdSiteURL(dir, os.Args[2:])
+	case "slack-channels":
+		cmdSlackChannels(dir)
 	case "scenarios":
 		cmdScenarios(os.Args[2:])
 	case "-h", "--help", "help":
@@ -491,6 +513,15 @@ func main() {
 func usage() {
 	banner()
 	fmt.Println(`usage:
+  greenagonia setup                                          first-run wizard
+  greenagonia token | user-token | slack-token
+  greenagonia admin add <INI> "Name" <email> [slack-email]
+  greenagonia admin remove <INI> | list
+  greenagonia deploy | destroy
+  greenagonia urls [INITIALS]
+  greenagonia site-url [URL]
+  greenagonia slack-channels
+
   greenagonia scenarios list
   greenagonia scenarios dump-json
 
