@@ -1,277 +1,301 @@
 # Greenagonia
 
-Greenagonia is PagerDuty's fictional demo company. This repo gives you a
-one-command way to stand up a complete Greenagonia environment in a real
-PagerDuty account and then drive realistic incidents through it.
+Greenagonia is PagerDuty's fictional demo company. This repo stands up a
+**shared, multi-admin** Greenagonia environment in one PagerDuty account:
+each admin on your team gets their own full demo stack (services, schedules,
+escalation policy, event orchestration) and their own personal link to the
+hosted storefront. When a customer checkout fails in the storefront, an
+incident opens on that admin's services and pages them — nobody else.
 
-## Quick start (macOS)
+---
+
+## Install
+
+### Linux x86_64 — one script
 
 ```bash
-git clone https://github.com/justynroberts/greenagonia.git && cd greenagonia && ./quickstart.sh
+curl -fsSL https://raw.githubusercontent.com/justynroberts/greenagonia/main/single-user/install.sh | bash
 ```
 
-That checks/installs the prerequisites (Terraform + Go via Homebrew), builds
-the CLI, and prints the two commands you need next. Fully unattended variant —
-export your credentials first and it deploys too:
+`install.sh` downloads the latest pre-built `greenagonia-linux-amd64` binary
+to `/usr/local/bin/greenagonia` and installs Terraform 1.9.8 if it is not
+already present.
+
+### macOS — prereqs + build
 
 ```bash
-export PAGERDUTY_TOKEN=<admin-api-key> GREENAGONIA_EMAIL=you@example.com
-git clone https://github.com/justynroberts/greenagonia.git && cd greenagonia && ./quickstart.sh
+git clone https://github.com/justynroberts/greenagonia.git
+cd greenagonia/single-user && ./quickstart.sh
 ```
 
-## Prerequisites
+`quickstart.sh` checks/installs Terraform and Go via Homebrew, then builds the
+binary. The binary lands at `~/work/greenagonia/greenagonia` (the repo root,
+one level above `single-user/`).
 
-| Requirement | Notes |
+### Build from source
+
+```bash
+cd single-user
+make build          # generates site/scenarios.json, compiles native binary
+make build-all      # cross-compiles for macOS (arm64/amd64), Linux (amd64/arm64), Windows
+make clean          # remove compiled binaries from the repo root
+```
+
+`make build` runs two steps in sequence:
+
+1. `greenagonia scenarios dump-json > site/scenarios.json` — exports scenario
+   definitions from the Go source (single source of truth).
+2. `go build` — compiles the binary. Output: `~/work/greenagonia/greenagonia`.
+
+---
+
+## CLI reference
+
+### First-run
+
+```bash
+greenagonia setup
+```
+
+Interactive wizard. Collects: PagerDuty REST API token, PagerDuty region
+(global / eu), time zone for schedules, storefront base URL, optional Slack
+configuration, and details for the first admin. Writes
+`terraform-shared/secrets.auto.tfvars.json` (chmod 600, gitignored) and
+`terraform-shared/config.auto.tfvars.json` (gitignored).
+
+### Tokens and secrets
+
+```bash
+greenagonia token           # set or replace the PagerDuty REST API token
+greenagonia user-token      # set the PagerDuty user-level token (required for Slack connections)
+greenagonia slack-token     # set the Slack bot token
+```
+
+Each command prompts for the value with hidden input and writes it to the
+gitignored secrets file.
+
+### Admin management
+
+```bash
+greenagonia admin add <INI> "Full Name" <email> [slack-email]
+greenagonia admin add JR "Justyn Roberts" justyn@example.com
+greenagonia admin add JR "Justyn Roberts" justyn@example.com justyn@company.slack.com
+
+greenagonia admin remove JR      # marks JR for destruction on next deploy
+greenagonia admin list           # show all configured admins with initials and email
+```
+
+Initials are 2–4 uppercase letters and prefix every resource that belongs to
+that admin. If the requested initials are already taken, the CLI derives free
+ones from the name automatically: `JR → JRO → JROB → JOR …`. It tells you
+what it chose. Re-adding the same email under the same initials is an update,
+not a collision.
+
+The optional `slack-email` argument is the email used in the Slack workspace
+(only needed when it differs from the PagerDuty email).
+
+### Deploy and destroy
+
+```bash
+greenagonia deploy      # terraform init → plan → confirm → apply
+greenagonia destroy     # destroy the entire environment (prompts for confirmation)
+```
+
+`deploy` prints each admin's personal storefront link at the end. Plans are
+additive by admin: adding or removing one admin touches only that admin's
+resources; everything else is untouched.
+
+### URLs and site
+
+```bash
+greenagonia urls            # show all per-admin storefront links and routing keys
+greenagonia urls JR         # show just one admin
+greenagonia site-url        # show the current storefront base URL
+greenagonia site-url http://3.85.144.140    # set the storefront base URL
+```
+
+After changing the site URL, run `greenagonia deploy` so the outputs reflect
+the new base.
+
+### Slack channels
+
+```bash
+greenagonia slack-channels  # create {ini}-incidents channels for all admins
+```
+
+Creates the per-admin Slack channels and wires up the PagerDuty Slack
+connection. Requires `slack-token` and `user-token` to be set. You can also
+let `greenagonia deploy` handle this — `slack-channels` is a convenience
+shortcut.
+
+### Scenarios
+
+```bash
+greenagonia scenarios list        # browse available scenarios with descriptions
+greenagonia scenarios dump-json   # export scenario data as JSON (used by make build)
+```
+
+The shared environment is driven exclusively by the storefront. The storefront
+fires the `bad-payment-deploy` scenario; `scenarios list` shows what the
+binary knows about all scenarios. There are no `run` or `resolve` commands in
+this environment — use the storefront or resolve incidents directly in
+PagerDuty.
+
+---
+
+## Architecture
+
+### What each admin gets
+
+For initials `JR`:
+
+| Resource | Name |
 |---|---|
-| macOS (Apple Silicon or Intel) | Linux works too if Homebrew is installed |
-| [Homebrew](https://brew.sh) | the only thing `quickstart.sh` won't install for you |
-| Terraform ≥ 1.5 | auto-installed by `quickstart.sh` via brew if missing |
-| Go ≥ 1.22 | auto-installed by `quickstart.sh` via brew if missing (build only) |
-| PagerDuty account | admin/global access; Free plan works for the core demo |
-| PagerDuty REST API key | **Read/Write**; create at *Integrations → API Access Keys* |
-| A fresh on-call email | must **not** already exist as a user in the PD account; two extra users are derived from it via plus-addressing (`you+oncall2@`, `you+oncall3@`) |
-| (EU accounts) `--region eu` | if your subdomain is `*.eu.pagerduty.com`; wrong region = 401 |
-| (optional) AIOps add-on | for the content-based alert grouping the services are configured with |
-| (optional) Business/Digital Ops plan | only needed for `--with-workflows` (Incident Workflows) |
+| User | their real name and email — gets the actual pages |
+| Team | `JR-SRE-TEAM` (admin = manager, 5 personas = responders) |
+| 8 technical services | `JR-payment-gateway`, `JR-checkout-api`, `JR-user-auth`, `JR-product-catalog`, `JR-recommendation-engine`, `JR-search-service`, `JR-order-service`, `JR-notification-service` |
+| 2 business services | `JR-customer-checkout`, `JR-product-discovery` |
+| 3 schedules | `JR Primary On-Call`, `JR Secondary On-Call`, `JR Tertiary On-Call` |
+| Escalation policy | `JR SRE On-Call` (primary → secondary → tertiary, 2 loops) |
+| Event orchestration | `Greenagonia Event Router — JR` with a personal routing key |
+| (optional) Slack | `jr-incidents` channel + PD Slack connection |
 
-What gets created:
+The primary schedule has the admin on call Mon–Fri 09:00–17:00 (configurable
+time zone, default `Europe/London`). The five shared personas cover nights,
+weekends, and all secondary/tertiary rotations.
 
-- **1 user / 1 team / 1 escalation policy** — the primary on-call email you supply
-- **8 technical services** — `payment-gateway`, `checkout-api`, `user-auth`,
-  `product-catalog`, `recommendation-engine`, `search-service`, `order-service`,
-  `notification-service`
-- **2 business services** — `customer-checkout` and `product-discovery`, each
-  wired up via service-dependency edges to the technical services that support
-  it
-- **1 event orchestration** — single inbound routing key; routes events to a
-  service based on `payload.custom_details.service` (see below)
-- **1 Events API v2 integration per technical service** — doubles as the
-  change-event endpoint each service receives GitHub deploys on
-- **3 automation actions** — `run-diagnostics`, `rollback-deployment`,
-  `clear-down-settings`, attached to every technical service
-- **3 incident workflows** — SEV-1 response, auto-rollback, clear-down — manual
-  triggers, available on every incident. **Opt-in via `--with-workflows`**:
-  Incident Workflows are a paid PagerDuty feature (Business / Digital
-  Operations plans). On accounts without the entitlement the API returns
-  404. Default off; the automation actions above still show up on every
-  incident's Actions menu when workflows are disabled.
+**Isolation:** each admin has the Restricted Access PagerDuty role, scoped to
+their team. They see their own stack and the shared personas; they cannot see
+any other admin's resources. The Terraform operator's REST token sees and
+manages everything.
 
-Everything is namespaced with an `environment` slug (e.g. `demo`, `qa`,
-`alex`) so several environments can coexist in the same PagerDuty account.
+### Shared resources
 
----
+Created once, visible to all admins:
 
-## Layout
+| Resource | Notes |
+|---|---|
+| 5 personas | Sarah SRE, Dan Developer, Matt Manager, Pablo Platform, Sam Security — `@greenagonia.io` emails, pages don't deliver |
+| Greenagonia team | all admins are managers; all personas are responders |
+| 5 platform services | `api-gateway`, `data-platform`, `identity-service`, `infrastructure`, `platform-engineering` |
+| Greenagonia Platform Router | shared event orchestration with its own routing key |
+| `unrouted-events` | catch-all service for events that don't match any rule |
+| 4 automation actions | Run Diagnostics, Rollback Deployment, Clear Down Settings, Isolate & Capture Forensics — bound to every technical service |
+| (optional) 4 incident workflows | Major Incident Escalation, Security Incident Response, Post to Status Page, Rollback Deployment — requires Incident Workflows entitlement |
+| (optional) `greenagonia-incidents` Slack channel | shared channel for the whole Greenagonia team |
 
-```
-greenagonia/
-├── README.md
-├── ADMIN-GUIDE.md               # shared environment admin guide
-├── quickstart.sh                # one-shot: prereqs + build (+ deploy)
-├── Makefile
-├── terraform/                   # single-user Terraform
-│   ├── main.tf                  # provider, locals (the service catalogue)
-│   ├── users.tf                 # user, team, escalation policy
-│   ├── services.tf              # tech + business services, deps, change-event integrations
-│   ├── orchestration.tf         # event orchestration + dynamic router
-│   ├── automation.tf            # Diagnostics / Rollback / Clear-down
-│   ├── workflows.tf             # 3 incident workflows + manual triggers
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── terraform.tfvars.example
-├── terraform-shared/            # shared/multi-user Terraform
-│   └── *.tf                     # state and secrets are gitignored
-├── site/                        # storefront source — static e-commerce site
-│   ├── index.html
-│   ├── chaos.js                 # chaos engine; loads scenarios.json at runtime
-│   ├── scenarios.json           # generated by make build; committed for static hosting
-│   └── ...
-└── cli/
-    ├── go.mod
-    ├── main.go                  # deploy / undeploy / scenarios / web / site-url
-    └── site/                    # generated by make build — gitignored
-```
+### How routing works
+
+Each admin has **one inbound routing key** (their event orchestration). The
+storefront posts alerts to that key with `custom_details.service` set to a
+bare service name (e.g. `payment-gateway`). The orchestration router matches
+on that field and routes to the admin's prefixed service
+(`JR-payment-gateway`), which lights up `JR-customer-checkout`.
+
+Anything that does not match any rule lands on the shared `unrouted-events`
+catch-all.
+
+The routing key alone decides whose stack lights up. Two people can demo
+simultaneously from the same hosted storefront — they just use different
+`?pdkey=` links.
+
+### Change events
+
+When a checkout fails, the storefront first posts two change events (backdated
+to simulate a real deployment sequence):
+
+| Event | Backdated | Summary |
+|---|---|---|
+| GitHub deploy | −3 min | `payment-service v2.41.0` deployed to production |
+| LaunchDarkly flag | −2 min | `checkout-v2-enabled` flag enabled for all users |
+
+These appear on the incident's *Recent Changes* tab. If a change key is
+missing, the event is silently skipped — the alert still fires.
 
 ---
-
-## Build (manual — quickstart.sh does this for you)
-
-```bash
-make build           # sync site files + native binary → ./greenagonia
-make build-all       # sync site files + cross-compile for macOS / Linux / Windows
-```
-
-`make build` generates `site/scenarios.json`, copies `site/` into `cli/site/` (gitignored),
-then compiles the Go binary with that directory embedded. The binary is fully
-self-contained — no external site files needed at runtime.
 
 ## Storefront
 
-`greenagonia web` serves the embedded Greenagonia e-commerce site locally
-and opens it in your browser with the routing key and change-event keys
-pre-loaded:
+The storefront (`site/`) is a zero-build static site. It reads
+`site/scenarios.json` at runtime to display scenario details.
 
 ```bash
-./greenagonia web --env demo
-# → serves http://localhost:8080, opens browser with ?pdkey=... pre-set
+# local laptop demo
+cd site && python3 -m http.server 8080
+# open http://localhost:8080/?pdkey=<your-routing-key>
 ```
 
-If the storefront is hosted externally (GitHub Pages, EC2, etc.), set the
-base URL once and `web` opens it directly — no local server started:
+For a shared team deployment, host the contents of `site/` on any static host
+(GitHub Pages, S3, an EC2 instance) and tell the CLI the URL:
 
 ```bash
-./greenagonia site-url http://3.85.144.140 --env demo
-./greenagonia web --env demo   # opens external URL, prints the link
+greenagonia site-url http://3.85.144.140
+greenagonia deploy      # re-runs so outputs include the new base URL
+greenagonia urls        # prints updated per-admin links
 ```
 
-The `--no-open` flag prints the URL without launching a browser. The `--site-url`
-flag overrides the stored URL for a single invocation.
+Opening the `?pdkey=` URL stores the routing key in the browser's
+`localStorage` and scrubs it from the address bar. It is a one-time action
+per browser. The ops console (Ctrl/Cmd+Shift+K, or the footer link) shows all
+configured keys and a log of events dispatched in the current session.
 
-## Deploy
-
-```bash
-export PAGERDUTY_TOKEN=...
-./greenagonia deploy --env demo --email me@example.com
-```
-
-For EU PagerDuty accounts (subdomain at `*.eu.pagerduty.com`):
-
-```bash
-./greenagonia deploy --env demo --region eu --email me@example.com
-```
-
-The region is recorded in `~/.greenagonia/<env>.json` so subsequent
-`scenarios run` and `web` commands automatically use the right Events API
-host (`events.eu.pagerduty.com` vs `events.pagerduty.com`).
-
-This will:
-
-1. `terraform init` (idempotent)
-2. select / create the Terraform workspace `demo`
-3. `terraform apply` with your inputs
-4. write the routing key AND every per-service change-event integration key
-   to `~/.greenagonia/demo.json` (mode `0600`)
-5. print the routing key
-
-## Run a scenario
-
-`scenarios run` reads `~/.greenagonia/<env>.json`, so no key flags needed:
-
-```bash
-./greenagonia scenarios list
-./greenagonia scenarios run --env demo --scenario bad-payment-deploy
-```
-
-Add `--repeat N` to fire a scenario several times back-to-back; add
-`--no-delay` to skip the realistic inter-step pauses. `--routing-key`
-still works as an override for ad-hoc testing — change events are skipped
-in that mode because they need per-service integration keys.
-
-## Undeploy
-
-```bash
-./greenagonia undeploy --env demo
-```
-
-Removes the PagerDuty resources AND the local state file at
-`~/.greenagonia/demo.json`.
+HTTP and HTTPS both work. Avoid `file://` — CORS blocks the `?pdkey=` URL
+pre-loading.
 
 ---
 
-## How dynamic routing works
+## State management
 
-There's **one** inbound integration key (the orchestration's routing key)
-and **eight** technical services behind it. The CLI puts the target service
-name in every event:
+Terraform state lives in `state/` (gitignored). One person runs applies at a
+time. To back up state:
 
-```json
-{
-  "routing_key": "R0H...",
-  "event_action": "trigger",
-  "payload": {
-    "summary": "[payment-gateway] Auth failure rate 4% → 89% ...",
-    "severity": "critical",
-    "source": "payment-gw-prod-3",
-    "custom_details": {
-      "service": "payment-gateway",   ← the contract
-      "scenario": "bad-payment-deploy",
-      "release": "v2.4.1"
-    }
-  }
-}
+```bash
+./backup-state.sh
 ```
 
-The orchestration router (`terraform/main.tf` § 4) generates one rule per
-technical service from the same name list, all matching on
-`event.custom_details.service`. Add a new technical service to
-`locals.technical_services` and (a) a PagerDuty service gets created and
-(b) a router rule is generated for it — no other edits needed. Anything
-that doesn't match falls through to the `*-unrouted-events` catch-all.
+Creates a dated `.tar.gz` in `state/backups/` and retains the 10 most recent
+backups. If you need concurrent applies across multiple operators, migrate to a
+remote backend with locking (HCP Terraform free tier: create a workspace, add
+a `cloud {}` block to `terraform-shared/main.tf`, run `terraform init` and
+approve the migration).
 
 ---
 
-## Scenarios
+## Repo layout
 
-Each scenario tells a story about a bad deploy that takes services down in
-sequence. Each one opens with a **simulated GitHub deploy** posted as a
-PagerDuty change event on the upstream service; PagerDuty then correlates
-the change with the incidents that follow on the same service. The CLI
-fires alert steps with realistic gaps so the cascade is visible in PagerDuty.
-
-| Scenario | GitHub change | Story | Services hit (in order) |
-|---|---|---|---|
-| `bad-payment-deploy`   | `payment-gateway` v2.4.1 by `alice` (PR #412) | NPEs on Amex card auths. Customers can't pay. | payment-gateway → checkout-api → order-service → notification-service |
-| `db-migration-fail`    | `user-auth` v4.11.0 by `bob` (PR #1207) | Long-running schema migration locks the `user_session` table. | user-auth → product-catalog → search-service → recommendation-engine |
-| `memory-leak-recs`     | `recommendation-engine` v3.2.0 by `carol` (PR #89) | Heap leak, OOM-killed in a restart loop. Search & catalog absorb the traffic. | recommendation-engine → search-service → product-catalog |
-| `config-push-gateway`  | `api-gateway-config` cfg-2026.06.09-3 by `dave` (PR #88, surfaces on `user-auth`) | New gateway config strips the `Authorization` header. Everything 401s. | user-auth → checkout-api → order-service → product-catalog |
-| `cache-stampede-search`| `search-service` v1.8.0 by `eve` (PR #304) | TTL drops 60s → 5s. Catalog gets stampeded. | search-service → product-catalog → recommendation-engine |
-| `noisy-neighbour`      | — (no change) | Low-priority info/warning noise sprayed at every service — stress-tests the router. | all 8 technical services |
-
-Each impacts at least one business service via the dependency graph, so
-you'll see `customer-checkout` and/or `product-discovery` degrade as the
-scenario plays out.
-
-### What a scenario actually fires
-
-1. **One change event** to `https://events.pagerduty.com/v2/change/enqueue`
-   using the upstream service's integration key. Payload includes repo,
-   commit SHA, PR number, author, release tag, deploy timestamp, and
-   GitHub links — i.e. what a real GitHub Actions integration would post.
-2. **A 5-second pause** so the change lands ahead of the incidents.
-3. **The alert cascade** to `https://events.pagerduty.com/v2/enqueue`
-   through the orchestration, with `custom_details.service` driving the
-   router. Each affected service receives 3-4 alerts in a ~15-second
-   burst — content-based alert grouping on the `group` + `class` event
-   fields (see `terraform/services.tf`) collapses each burst into one
-   incident deterministically, so a 12-alert scenario produces ~4
-   incidents (one per affected service), not 12. Content-based grouping
-   needs no learning period, unlike intelligent grouping which requires
-   days of per-service alert history before it groups anything.
-
-Alert summaries are short symptom titles with no service name (the
-PagerDuty service provides that context). Every alert carries a
-human-readable `custom_details.description` ("Delivery delayed by more
-than 60s; current lag is 4 minutes behind real time.") plus structured
-numerical fields (rates, queue depths), a normalized `host` shared across
-the service's burst, and scenario-wide fields (`deploy_id`,
-`root_cause_service`) shared across the whole cascade.
-
-Use `--scenario all` to run every scenario in sequence (good for a longer
-demo).
-
----
-
-## Triggering the response
-
-Once an incident is open, the three incident workflows show up as
-responder-triggerable actions in the PagerDuty UI:
-
-- **SEV-1 response** — posts a status update, then runs the diagnostics
-  automation action
-- **Auto-rollback** — runs the rollback automation action, then posts a
-  follow-up status update
-- **Clear down** — runs the clear-down automation action
-
-The automation actions are inline shell stubs that print what they would
-do in a real environment (`kubectl rollout undo`, `consul kv delete`, etc.).
-In production you'd point them at a real Runbook Automation runner.
+```
+single-user/              this repo — justynroberts/greenagonia
+├── README.md             this file
+├── ADMIN-GUIDE.md        step-by-step admin walkthrough
+├── CLAUDE.md             context for Claude Code
+├── Makefile              make build / build-all / clean / generate-scenarios
+├── install.sh            install binary + terraform on Linux x86_64
+├── backup-state.sh       back up state/ to a dated tar.gz
+├── quickstart.sh         macOS prereqs + build
+├── site/                 storefront source (static site)
+│   ├── index.html
+│   ├── chaos.js          chaos engine; fetches scenarios.json at runtime
+│   ├── scenarios.json    generated by make build; committed for static hosting
+│   └── ...
+├── state/                terraform state dir (gitignored)
+│   └── backups/          created by backup-state.sh
+├── terraform-shared/     shared environment Terraform
+│   ├── main.tf           provider + locals (service catalogue, personas)
+│   ├── users.tf
+│   ├── teams.tf
+│   ├── schedules.tf
+│   ├── escalation_policies.tf
+│   ├── services.tf
+│   ├── business_services.tf
+│   ├── orchestration.tf
+│   ├── greenagonia_platform.tf
+│   ├── slack_channels.tf
+│   ├── automation.tf
+│   ├── workflows.tf
+│   ├── variables.tf
+│   └── outputs.tf
+└── cli/
+    ├── go.mod            stdlib only (plus golang.org/x/term)
+    ├── main.go           scenarios + colour helpers + terraform helpers
+    └── shared.go         environment management commands
+```
