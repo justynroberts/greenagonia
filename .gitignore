@@ -5,16 +5,6 @@ state/*
 !state/.gitkeep
 state/backups/
 
-# single-user terraform
-terraform/.terraform/
-terraform/.terraform.lock.hcl
-terraform/terraform.tfstate
-terraform/terraform.tfstate.*
-terraform/terraform.tfstate.d/
-terraform/terraform.tfvars
-terraform/crash.log
-terraform/*.plan
-
 # shared terraform — state and secrets, never commit
 terraform-shared/.terraform/
 terraform-shared/.terraform.lock.hcl
