@@ -477,8 +477,6 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
-	case "shared":
-		cmdShared(os.Args[2:])
 	case "scenarios":
 		cmdScenarios(os.Args[2:])
 	case "-h", "--help", "help":
@@ -493,15 +491,6 @@ func main() {
 func usage() {
 	banner()
 	fmt.Println(`usage:
-  greenagonia shared setup                                          first-run wizard
-  greenagonia shared token | user-token | slack-token
-  greenagonia shared admin add <INI> "Name" <email> [slack-email]
-  greenagonia shared admin remove <INI> | list
-  greenagonia shared deploy | destroy
-  greenagonia shared urls [INITIALS]
-  greenagonia shared site-url [URL]
-  greenagonia shared slack-channels
-
   greenagonia scenarios list
   greenagonia scenarios dump-json
 
